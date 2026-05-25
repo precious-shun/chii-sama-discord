@@ -15,15 +15,16 @@ jobs:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
           GEMINI_API_KEY_1: ${{ secrets.GEMINI_API_KEY_1 }}
           GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
+          GEMINI_API_KEY_3: ${{ secrets.GEMINI_API_KEY_3 }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USERNAME }} 
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT }}
-          envs: DISCORD_TOKEN, GEMINI_API_KEY_1, GEMINI_API_KEY_2
+          envs: DISCORD_TOKEN, GEMINI_API_KEY_1, GEMINI_API_KEY_2, GEMINI_API_KEY_3
           script: |
             # 1. Execute all directory and file operations AS the chiisama user
-            sudo -u chiisama DISCORD_TOKEN="$DISCORD_TOKEN" GEMINI_API_KEY_1="$GEMINI_API_KEY_1" GEMINI_API_KEY_2="$GEMINI_API_KEY_2" bash -c '
+            sudo -u chiisama DISCORD_TOKEN="$DISCORD_TOKEN" GEMINI_API_KEY_1="$GEMINI_API_KEY_1" GEMINI_API_KEY_2="$GEMINI_API_KEY_2" GEMINI_API_KEY_3="$GEMINI_API_KEY_3" bash -c '
               cd /opt/chii-sama
               
               # Fetch latest changes
@@ -38,6 +39,7 @@ jobs:
               echo "DISCORD_TOKEN=$DISCORD_TOKEN" > .env
               echo "GEMINI_API_KEY_1=$GEMINI_API_KEY_1" >> .env
               echo "GEMINI_API_KEY_2=$GEMINI_API_KEY_2" >> .env
+              echo "GEMINI_API_KEY_3=$GEMINI_API_KEY_3" >> .env
               chmod 600 .env
             '
             
