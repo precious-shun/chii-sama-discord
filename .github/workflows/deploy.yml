@@ -17,7 +17,6 @@ jobs:
           GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
         with:
           host: ${{ secrets.VPS_HOST }}
-          # Ensure this secret is set to 'sayyidyofa' in GitHub Settings
           username: ${{ secrets.VPS_USERNAME }} 
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT }}
@@ -43,4 +42,4 @@ jobs:
             '
             
             # 2. Restart the systemd service AS sayyidyofa
-            sudo systemctl restart chiisama.service
+            sudo /usr/bin/systemctl restart chiisama.service
