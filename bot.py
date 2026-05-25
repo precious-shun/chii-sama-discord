@@ -60,7 +60,7 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-TRIGGER_PATTERN = re.compile(r'chii-?sama|chitose', re.IGNORECASE)
+TRIGGER_PATTERN = re.compile(r'chii[\s-]?sama|chitose', re.IGNORECASE)
 LAST_BOT_MESSAGE: dict[int, tuple[str, float]] = {}  # channel_id -> (content, timestamp)
 FOLLOWUP_WINDOW = 60  # seconds
 
