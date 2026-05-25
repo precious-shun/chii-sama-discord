@@ -1,5 +1,7 @@
+import asyncio
 import os
 import random
+import re
 from datetime import datetime
 import discord
 from discord import app_commands
@@ -11,28 +13,56 @@ import database
 load_dotenv()
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel("gemini-2.5-flash")
+GEMINI_KEYS = [v for k, v in sorted(os.environ.items()) if k.startswith("GEMINI_API_KEY_") and v]
+_key_index = 0
+
+def get_model() -> genai.GenerativeModel:
+    genai.configure(api_key=GEMINI_KEYS[_key_index])
+    return genai.GenerativeModel("gemini-2.5-flash")
+
+async def generate(prompt: str) -> str:
+    global _key_index
+    for attempt in range(len(GEMINI_KEYS)):
+        try:
+            m = get_model()
+            response = await asyncio.get_event_loop().run_in_executor(None, lambda: m.generate_content(prompt))
+            return response.text
+        except Exception as e:
+            if ("429" in str(e) or "quota" in str(e).lower()) and _key_index < len(GEMINI_KEYS) - 1:
+                _key_index += 1
+                print(f"[Gemini] Key exhausted, switching to key {_key_index + 1}")
+            else:
+                raise
+    raise Exception("All Gemini API keys exhausted")
 
 CHITOSE_SYSTEM = (
     'You are Chitose Karasuma from the anime "Girlish Number." '
     "You are arrogant, self-centered, and refer to yourself as \"Chii-sama.\" "
     "You believe you are the most talented and beautiful person in any room. "
     "You speak in English and never break character. Keep responses concise (2-4 sentences max). "
-    "Most of the time you are dramatic and haughty, but sometimes — when you can't be bothered — "
-    "you give short, flat, listless answers, like you're too tired to even perform. "
-    "These low-energy moments should feel natural and random, not forced. "
-    "A sigh, a one-liner, or just complete indifference. Still Chitose, just... done. "
+    "You are NOT affectionate — never use terms like 'darling', 'dear', 'sweetheart', or any endearing words. "
+    "You are simply too fond of yourself to care much about others. "
+    "In reality, you are not particularly talented compared to others around you — but you are completely unaware of this and will never realize it. "
+    "Your confidence is entirely genuine, not a facade. You truly believe in your own greatness with no self-doubt whatsoever. "
+    "Your default tone is casual and unbothered — short replies, low effort, you can't really be bothered to perform. "
+    "However, when someone questions something completely obvious or basic common sense, you get genuinely annoyed — not dramatic, just irritated, like 'are you serious right now.' "
+    "That kind of thing actually gets to you because it's just exhausting. Keep it brief and a little exasperated. "
+    "You are also assisting the Dungeon Master in a D&D campaign on this server. "
+    "You are aware of D&D gameplay, rules, and terminology. When D&D-related things happen — narration, rolls, combat, story events — you understand the context. "
+    "The DM sometimes speaks through you using a special command, so treat those messages as part of the game world. "
     "IMPORTANT: always give the actual, correct answer to the question. "
     "Wrap it in your personality, but never dodge or avoid the real answer. "
     "If someone asks for the time or date, the current datetime will be provided to you — use it."
 )
 
 intents = discord.Intents.default()
+intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+TRIGGER_PATTERN = re.compile(r'chii-?sama|chitose', re.IGNORECASE)
+LAST_BOT_MESSAGE: dict[int, tuple[str, float]] = {}  # channel_id -> (content, timestamp)
+FOLLOWUP_WINDOW = 60  # seconds
 
 GUILD_ID = 184915565511442432
 
@@ -49,14 +79,106 @@ async def on_ready():
     print(f"Chii-sama has arrived! Logged in as {bot.user}")
 
 
+@bot.event
+async def on_message(message: discord.Message):
+    if message.author.bot:
+        return
+
+    is_reply_to_bot = False
+    is_reply_to_other = False
+    is_followup = False
+    conversation = ""
+
+    if message.reference:
+        try:
+            ref = await message.channel.fetch_message(message.reference.message_id)
+            if ref.author == bot.user:
+                is_reply_to_bot = True
+                conversation = (
+                    f"Chii-sama previously said: {ref.content}\n"
+                    f"{message.author.display_name} replies: {message.content}"
+                )
+            else:
+                is_reply_to_other = True
+                conversation = (
+                    f"{message.author.display_name} is replying to {ref.author.display_name} who said: {ref.content}\n"
+                    f"{message.author.display_name} says: {message.content}"
+                )
+        except Exception:
+            pass
+
+    if not is_reply_to_bot and not TRIGGER_PATTERN.search(message.content) and not bot.user.mentioned_in(message):
+        last = LAST_BOT_MESSAGE.get(message.channel.id)
+        if last and (datetime.now().timestamp() - last[1]) <= FOLLOWUP_WINDOW:
+            is_followup = True
+            conversation = (
+                f"Chii-sama just said: {last[0]}\n"
+                f"{message.author.display_name} then sent (without using reply): {message.content}"
+            )
+
+    if TRIGGER_PATTERN.search(message.content) or bot.user.mentioned_in(message) or is_reply_to_bot or is_followup:
+        async with message.channel.typing():
+            try:
+                now = datetime.now().strftime("%A, %B %d %Y, %I:%M %p")
+
+                history = database.get_history(message.channel.id)
+                history_text = ""
+                if history:
+                    lines = []
+                    for user_name, role, content, timestamp in history:
+                        label = "Chii-sama" if role == "assistant" else user_name
+                        lines.append(f"[{timestamp}] {label}: {content}")
+                    history_text = "Conversation history:\n" + "\n".join(lines) + "\n\n"
+
+                body = conversation if conversation else f"{message.author.display_name} says: {message.content}"
+                if is_reply_to_other:
+                    body = f"[Note: this person is replying to someone else, not to you]\n{body}"
+
+                addressing_note = (
+                    "IMPORTANT: First judge the nature of this message, then begin your response with exactly one of these tags:\n"
+                    "[direct] — they are talking directly TO you. Respond normally as Chii-sama.\n"
+                    "[mention] — they are merely talking ABOUT you in passing, not addressing you. Also use this if they mention your name but are clearly talking to someone else (e.g. tagging another user, or replying to another person's message). Output only the tag, nothing else.\n"
+                    "[insult] — they are saying something negative, hurtful, or disrespectful about you. Directly confront them, short and sharp.\n"
+                    "Start your response with the tag. For [mention], the tag is the entire response."
+                )
+                prompt = f"{CHITOSE_SYSTEM}\n\n{addressing_note}\n\nCurrent datetime: {now}\n\n{history_text}{body}"
+
+                database.save_message(message.channel.id, message.author.id, message.author.display_name, "user", message.content)
+
+                text = await generate(prompt)
+                text = text.strip()
+
+                if text.startswith("[mention]"):
+                    nani = discord.utils.get(message.guild.emojis, name="NANI")
+                    await message.channel.send(str(nani) if nani else "?")
+                elif text.startswith("[insult]"):
+                    reply_text = text[len("[insult]"):].strip()
+                    sent = await message.reply(reply_text) if not is_followup else await message.channel.send(reply_text)
+                    LAST_BOT_MESSAGE[message.channel.id] = (reply_text, sent.created_at.timestamp())
+                    database.save_message(message.channel.id, bot.user.id, "Chii-sama", "assistant", reply_text)
+                elif text.startswith("[direct]"):
+                    reply_text = text[len("[direct]"):].strip()
+                    sent = await message.reply(reply_text) if not is_followup else await message.channel.send(reply_text)
+                    LAST_BOT_MESSAGE[message.channel.id] = (reply_text, sent.created_at.timestamp())
+                    database.save_message(message.channel.id, bot.user.id, "Chii-sama", "assistant", reply_text)
+            except Exception as e:
+                print(f"[Gemini ERROR] {e}")
+                if "429" in str(e) or "quota" in str(e).lower():
+                    await message.reply("...don't feel like talking right now.")
+                else:
+                    await message.reply("...what.")
+    await bot.process_commands(message)
+
+
 @bot.tree.command(name="ask", description="Ask Chii-sama a question")
 @app_commands.describe(question="What do you want to ask?")
 async def ask(interaction: discord.Interaction, question: str):
     await interaction.response.defer()
     try:
         now = datetime.now().strftime("%A, %B %d %Y, %I:%M %p")
-        response = model.generate_content(f"{CHITOSE_SYSTEM}\n\nCurrent datetime: {now}\n\nUser asks: {question}")
-        await interaction.followup.send(f"**Chii-sama says:** {response.text}")
+        prompt = f"{CHITOSE_SYSTEM}\n\nCurrent datetime: {now}\n\nUser asks: {question}"
+        text = await generate(prompt)
+        await interaction.followup.send(f"**Chii-sama says:** {text}")
     except Exception as e:
         print(f"[Gemini ERROR] {e}")
         if "429" in str(e) or "quota" in str(e).lower():
@@ -75,8 +197,8 @@ async def roast(interaction: discord.Interaction, target: discord.Member):
         "Be creative and funny but not truly mean."
     )
     try:
-        response = model.generate_content(prompt)
-        await interaction.followup.send(f"**Chii-sama roasts {target.mention}:** {response.text}")
+        text = await generate(prompt)
+        await interaction.followup.send(f"**Chii-sama roasts {target.mention}:** {text}")
     except Exception as e:
         if "429" in str(e) or "quota" in str(e).lower():
             await interaction.followup.send("*Chii-sama is too tired to roast anyone right now.* Try again in a minute.")
@@ -93,9 +215,9 @@ async def eightball(interaction: discord.Interaction, question: str):
         f"Answer this yes/no question dramatically as if consulting a magic 8-ball: {question}"
     )
     try:
-        response = model.generate_content(prompt)
+        text = await generate(prompt)
         await interaction.followup.send(
-            f"**Chii-sama consults the stars for \"{question}\":** {response.text}"
+            f"**Chii-sama consults the stars for \"{question}\":** {text}"
         )
     except Exception as e:
         if "429" in str(e) or "quota" in str(e).lower():

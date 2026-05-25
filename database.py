@@ -14,8 +14,42 @@ def init_db():
             last_daily TEXT
         )
     """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS conversation_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            channel_id INTEGER,
+            user_id INTEGER,
+            user_name TEXT,
+            role TEXT,
+            content TEXT,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
     conn.commit()
     conn.close()
+
+
+def save_message(channel_id: int, user_id: int, user_name: str, role: str, content: str):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute(
+        "INSERT INTO conversation_history (channel_id, user_id, user_name, role, content) VALUES (?, ?, ?, ?, ?)",
+        (channel_id, user_id, user_name, role, content),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_history(channel_id: int, limit: int = 30) -> list:
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute(
+        "SELECT user_name, role, content, timestamp FROM conversation_history WHERE channel_id = ? ORDER BY id DESC LIMIT ?",
+        (channel_id, limit),
+    )
+    rows = c.fetchall()
+    conn.close()
+    return list(reversed(rows))
 
 
 def ensure_user(user_id: int):
