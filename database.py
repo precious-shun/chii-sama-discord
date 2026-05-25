@@ -1,0 +1,71 @@
+import sqlite3
+from datetime import date
+
+DB_PATH = "chiisama.db"
+
+
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            user_id INTEGER PRIMARY KEY,
+            coins INTEGER DEFAULT 0,
+            last_daily TEXT
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+
+def ensure_user(user_id: int):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("INSERT OR IGNORE INTO users (user_id, coins) VALUES (?, 0)", (user_id,))
+    conn.commit()
+    conn.close()
+
+
+def get_user(user_id: int) -> dict:
+    ensure_user(user_id)
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT coins, last_daily FROM users WHERE user_id = ?", (user_id,))
+    row = c.fetchone()
+    conn.close()
+    return {"coins": row[0], "last_daily": row[1]}
+
+
+def add_coins(user_id: int, amount: int):
+    ensure_user(user_id)
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("UPDATE users SET coins = coins + ? WHERE user_id = ?", (amount, user_id))
+    conn.commit()
+    conn.close()
+
+
+def claim_daily(user_id: int) -> bool:
+    ensure_user(user_id)
+    today = str(date.today())
+    user = get_user(user_id)
+    if user["last_daily"] == today:
+        return False
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute(
+        "UPDATE users SET coins = coins + 100, last_daily = ? WHERE user_id = ?",
+        (today, user_id),
+    )
+    conn.commit()
+    conn.close()
+    return True
+
+
+def get_leaderboard() -> list:
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT user_id, coins FROM users ORDER BY coins DESC LIMIT 10")
+    rows = c.fetchall()
+    conn.close()
+    return rows
