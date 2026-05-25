@@ -1,0 +1,46 @@
+name: Deploy Chii-sama Bot
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Execute Remote SSH Commands
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+          GEMINI_API_KEY_1: ${{ secrets.GEMINI_API_KEY_1 }}
+          GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          # Ensure this secret is set to 'sayyidyofa' in GitHub Settings
+          username: ${{ secrets.VPS_USERNAME }} 
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT }}
+          envs: DISCORD_TOKEN, GEMINI_API_KEY_1, GEMINI_API_KEY_2
+          script: |
+            # 1. Execute all directory and file operations AS the chiisama user
+            sudo -u chiisama DISCORD_TOKEN="$DISCORD_TOKEN" GEMINI_API_KEY_1="$GEMINI_API_KEY_1" GEMINI_API_KEY_2="$GEMINI_API_KEY_2" bash -c '
+              cd /opt/chii-sama
+              
+              # Fetch latest changes
+              git fetch origin master
+              git reset --hard origin/master
+              
+              # Update dependencies using the Python 3.14 environment
+              source venv/bin/activate
+              pip install -r requirements.txt
+              
+              # Generate the .env file securely
+              echo "DISCORD_TOKEN=$DISCORD_TOKEN" > .env
+              echo "GEMINI_API_KEY_1=$GEMINI_API_KEY_1" >> .env
+              echo "GEMINI_API_KEY_2=$GEMINI_API_KEY_2" >> .env
+              chmod 600 .env
+            '
+            
+            # 2. Restart the systemd service AS sayyidyofa
+            sudo systemctl restart chiisama.service
