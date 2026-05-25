@@ -230,6 +230,25 @@ async def eightball(interaction: discord.Interaction, question: str):
             await interaction.followup.send("Chii-sama is unavailable right now. How disappointing for you.")
 
 
+@bot.tree.command(name="pick", description="Chii-sama draws one at random")
+@app_commands.describe(options="Options separated by commas (e.g. Alice, Bob, Charlie)")
+async def pick(interaction: discord.Interaction, options: str):
+    choices = [o.strip() for o in options.split(",") if o.strip()]
+    if len(choices) < 2:
+        await interaction.response.send_message("Give at least two options.", ephemeral=True)
+        return
+    chosen = random.choice(choices)
+    responses = [
+        f"Aaaand the lucky pick is — **{chosen}**! Chii-sama has spoken~",
+        f"*reaches into the hat* ...and it's **{chosen}**! Congratulations~",
+        f"Drumroll please... **{chosen}**! You're welcome.",
+        f"The honor goes to — **{chosen}**! Not a bad choice, honestly.",
+        f"*unfolds the paper* Oh~ it's **{chosen}**! How exciting.",
+        f"And Chii-sama picks... **{chosen}**! Lucky~",
+    ]
+    await interaction.response.send_message(random.choice(responses))
+
+
 @bot.tree.command(name="daily", description="Claim your daily 100 coins")
 async def daily(interaction: discord.Interaction):
     claimed = database.claim_daily(interaction.user.id)
