@@ -16,26 +16,36 @@ load_dotenv()
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 
 GEMINI_KEYS = [v for k, v in sorted(os.environ.items()) if k.startswith("GEMINI_API_KEY_") and v]
+GEMINI_MODELS = ["gemini-2.5-flash", "gemini-3.5-flash"]
 _key_index = 0
+_model_index = 0
 
 def get_model() -> genai.GenerativeModel:
     genai.configure(api_key=GEMINI_KEYS[_key_index])
-    return genai.GenerativeModel("gemini-2.5-flash")
+    return genai.GenerativeModel(GEMINI_MODELS[_model_index])
 
 async def generate(prompt: str) -> str:
-    global _key_index
-    for attempt in range(len(GEMINI_KEYS)):
+    global _key_index, _model_index
+    total_attempts = len(GEMINI_KEYS) * len(GEMINI_MODELS)
+    for _ in range(total_attempts):
         try:
             m = get_model()
             response = await asyncio.get_event_loop().run_in_executor(None, lambda: m.generate_content(prompt))
             return response.text
         except Exception as e:
-            if ("429" in str(e) or "quota" in str(e).lower()) and _key_index < len(GEMINI_KEYS) - 1:
+            if "429" in str(e) or "quota" in str(e).lower():
                 _key_index += 1
-                print(f"[Gemini] Key exhausted, switching to key {_key_index + 1}")
+                if _key_index >= len(GEMINI_KEYS):
+                    _key_index = 0
+                    _model_index = (_model_index + 1) % len(GEMINI_MODELS)
+                    print(f"[Gemini] All keys exhausted on current model, switching to {GEMINI_MODELS[_model_index]}")
+                else:
+                    print(f"[Gemini] Key exhausted, switching to key {_key_index + 1}")
             else:
                 raise
-    raise Exception("All Gemini API keys exhausted")
+    _key_index = 0
+    _model_index = 0
+    raise Exception("All Gemini API keys and models exhausted")
 
 # CHITOSE_SYSTEM = (
 #     'You are Chitose Karasuma from the anime "Girlish Number." '
