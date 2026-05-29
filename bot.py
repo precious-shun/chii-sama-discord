@@ -23,10 +23,10 @@ _model_index = 0
 def get_model(use_search: bool = False) -> genai.GenerativeModel:
     genai.configure(api_key=GEMINI_KEYS[_key_index])
     if use_search:
-        return genai.GenerativeModel(
-            GEMINI_MODELS[_model_index],
-            tools=[{"google_search_retrieval": {}}],
+        search_tool = genai.protos.Tool(
+            google_search=genai.protos.GoogleSearch()
         )
+        return genai.GenerativeModel(GEMINI_MODELS[_model_index], tools=[search_tool])
     return genai.GenerativeModel(GEMINI_MODELS[_model_index])
 
 async def generate(prompt: str, use_search: bool = False) -> str:
