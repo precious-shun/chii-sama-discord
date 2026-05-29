@@ -291,7 +291,9 @@ async def on_message(message: discord.Message):
                     LAST_BOT_MESSAGE[message.channel.id] = (reply_text, sent.created_at.timestamp())
                     database.save_message(message.channel.id, bot.user.id, "Chii-sama", "assistant", reply_text)
             except Exception as e:
+                import traceback
                 print(f"[Gemini ERROR] {e}")
+                traceback.print_exc()
                 if "429" in str(e) or "quota" in str(e).lower():
                     await message.reply("...don't feel like talking right now.")
                 else:
