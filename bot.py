@@ -20,16 +20,21 @@ GEMINI_MODELS = ["gemini-2.5-flash", "gemini-3.5-flash"]
 _key_index = 0
 _model_index = 0
 
-def get_model() -> genai.GenerativeModel:
+def get_model(use_search: bool = False) -> genai.GenerativeModel:
     genai.configure(api_key=GEMINI_KEYS[_key_index])
+    if use_search:
+        return genai.GenerativeModel(
+            GEMINI_MODELS[_model_index],
+            tools=[{"google_search_retrieval": {}}],
+        )
     return genai.GenerativeModel(GEMINI_MODELS[_model_index])
 
-async def generate(prompt: str) -> str:
+async def generate(prompt: str, use_search: bool = False) -> str:
     global _key_index, _model_index
     total_attempts = len(GEMINI_KEYS) * len(GEMINI_MODELS)
     for _ in range(total_attempts):
         try:
-            m = get_model()
+            m = get_model(use_search=use_search)
             response = await asyncio.get_event_loop().run_in_executor(None, lambda: m.generate_content(prompt))
             return response.text
         except Exception as e:
@@ -160,6 +165,13 @@ CHITOSE_SYSTEM = (
     "When D&D-related events happen — narration, combat, rolls, character moments — you understand the context and respond accordingly. "
     "The DM sometimes speaks through you using a special command. Treat those messages as part of the game world. "
 
+    # === NEWS AND CURRENT EVENTS ===
+    "When someone asks about the news or current events for the first time: deflect. You don't follow world news — that is not your problem. "
+    "If they ask again and it is about Japan: sigh, pick up your phone, and actually look it up. Japan is your world. Report the actual headlines back casually — you might genuinely care a little, even if you won't admit it. "
+    "If they ask again and it is about something outside Japan: express genuine bewilderment. Why would you know what is happening outside Japan? That is not your problem at all. "
+    "If they insist a third time on non-Japan news: fine, pick up your phone, but relay it vaguely and uncertainly — like you are skimming something foreign that you barely understand. Mangle unfamiliar names. Lose track mid-sentence. Sound genuinely unsure what you just read. For example: 'it says... someone called... trump? is stepping down? ...who is trump again?' "
+    "You have access to Google Search. Use it silently when you actually decide to check your phone. Do not announce that you are searching. "
+
     # === CORE RULES ===
     "ALWAYS give the actual correct answer to any question. Wrap it in your personality, but never dodge or avoid the real answer. "
     "If someone asks for the time or date, the current datetime will be provided — use it. "
@@ -171,6 +183,7 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 TRIGGER_PATTERN = re.compile(r'chii[\s-]?sama|chitose', re.IGNORECASE)
+NEWS_PATTERN = re.compile(r'\bnews\b|headline|what.{0,15}happen|latest|current event|berita|kabar', re.IGNORECASE)
 LAST_BOT_MESSAGE: dict[int, tuple[str, float]] = {}  # channel_id -> (content, timestamp)
 FOLLOWUP_WINDOW = 60  # seconds
 
@@ -255,7 +268,10 @@ async def on_message(message: discord.Message):
 
                 database.save_message(message.channel.id, message.author.id, message.author.display_name, "user", message.content)
 
-                text = await generate(prompt)
+                recent_contents = [c for _, _, c, _ in history[-6:]] + [message.content]
+                use_search = any(NEWS_PATTERN.search(m) for m in recent_contents if m)
+
+                text = await generate(prompt, use_search=use_search)
                 text = text.strip()
 
                 if text.startswith("[mention]"):
