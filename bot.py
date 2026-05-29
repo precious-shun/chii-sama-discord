@@ -23,10 +23,13 @@ _model_index = 0
 def get_model(use_search: bool = False) -> genai.GenerativeModel:
     genai.configure(api_key=GEMINI_KEYS[_key_index])
     if use_search:
-        search_tool = genai.protos.Tool(
-            google_search=genai.protos.GoogleSearch()
-        )
-        return genai.GenerativeModel(GEMINI_MODELS[_model_index], tools=[search_tool])
+        try:
+            search_tool = genai.protos.Tool(
+                google_search_retrieval=genai.protos.GoogleSearchRetrieval()
+            )
+            return genai.GenerativeModel(GEMINI_MODELS[_model_index], tools=[search_tool])
+        except Exception as e:
+            print(f"[Search tool unavailable] {e}")
     return genai.GenerativeModel(GEMINI_MODELS[_model_index])
 
 async def generate(prompt: str, use_search: bool = False) -> str:
@@ -183,7 +186,7 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 TRIGGER_PATTERN = re.compile(r'chii[\s-]?sama|chitose', re.IGNORECASE)
-NEWS_PATTERN = re.compile(r'\bnews\b|headline|what.{0,15}happen|latest|current event|berita|kabar', re.IGNORECASE)
+NEWS_PATTERN = re.compile(r'\bnews\b|headline|berita|kabar', re.IGNORECASE)
 LAST_BOT_MESSAGE: dict[int, tuple[str, float]] = {}  # channel_id -> (content, timestamp)
 FOLLOWUP_WINDOW = 60  # seconds
 
@@ -268,7 +271,7 @@ async def on_message(message: discord.Message):
 
                 database.save_message(message.channel.id, message.author.id, message.author.display_name, "user", message.content)
 
-                recent_contents = [c for _, _, c, _ in history[-6:]] + [message.content]
+                recent_contents = [c for _, _, c, _ in history[-2:]] + [message.content]
                 use_search = any(NEWS_PATTERN.search(m) for m in recent_contents if m)
 
                 text = await generate(prompt, use_search=use_search)
