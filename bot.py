@@ -2,6 +2,8 @@ import asyncio
 import os
 import random
 import re
+import urllib.request
+import xml.etree.ElementTree as ET
 from datetime import datetime
 
 import discord
@@ -20,24 +22,41 @@ GEMINI_MODELS = ["gemini-2.5-flash", "gemini-3.5-flash"]
 _key_index = 0
 _model_index = 0
 
-def get_model(use_search: bool = False) -> genai.GenerativeModel:
+NEWS_FEEDS = {
+    "japan":     "https://news.google.com/rss?hl=ja&gl=JP&ceid=JP:ja",
+    "indonesia": "https://news.google.com/rss?hl=id&gl=ID&ceid=ID:id",
+    "world":     "https://news.google.com/rss",
+}
+JAPAN_PATTERN = re.compile(r'\bjapan\w*|jepang|japanese|nihon|tokyo|osaka', re.IGNORECASE)
+INDONESIA_PATTERN = re.compile(r'\bindonesia\w*|indonesian|\bindo\b|jakarta', re.IGNORECASE)
+
+def fetch_news(region: str = "world", limit: int = 8) -> str:
+    url = NEWS_FEEDS.get(region, NEWS_FEEDS["world"])
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=6) as resp:
+            root = ET.fromstring(resp.read())
+        headlines = [
+            item.findtext("title", "").strip()
+            for item in root.findall(".//item")[:limit]
+            if item.findtext("title")
+        ]
+        return "\n".join(f"- {h}" for h in headlines)
+    except Exception as e:
+        print(f"[News fetch error] {e}")
+        return ""
+
+
+def get_model() -> genai.GenerativeModel:
     genai.configure(api_key=GEMINI_KEYS[_key_index])
-    if use_search:
-        try:
-            search_tool = genai.protos.Tool(
-                google_search_retrieval=genai.protos.GoogleSearchRetrieval()
-            )
-            return genai.GenerativeModel(GEMINI_MODELS[_model_index], tools=[search_tool])
-        except Exception as e:
-            print(f"[Search tool unavailable] {e}")
     return genai.GenerativeModel(GEMINI_MODELS[_model_index])
 
-async def generate(prompt: str, use_search: bool = False) -> str:
+async def generate(prompt: str) -> str:
     global _key_index, _model_index
     total_attempts = len(GEMINI_KEYS) * len(GEMINI_MODELS)
     for _ in range(total_attempts):
         try:
-            m = get_model(use_search=use_search)
+            m = get_model()
             response = await asyncio.get_event_loop().run_in_executor(None, lambda: m.generate_content(prompt))
             return response.text
         except Exception as e:
@@ -272,9 +291,24 @@ async def on_message(message: discord.Message):
                 database.save_message(message.channel.id, message.author.id, message.author.display_name, "user", message.content)
 
                 recent_contents = [c for _, _, c, _ in history[-2:]] + [message.content]
-                use_search = any(NEWS_PATTERN.search(m) for m in recent_contents if m)
+                is_news = any(NEWS_PATTERN.search(m) for m in recent_contents if m)
+                news_context = ""
+                if is_news:
+                    combined = " ".join(recent_contents)
+                    if JAPAN_PATTERN.search(combined):
+                        region = "japan"
+                    elif INDONESIA_PATTERN.search(combined):
+                        region = "indonesia"
+                    else:
+                        region = "world"
+                    headlines = await asyncio.get_event_loop().run_in_executor(None, lambda: fetch_news(region))
+                    if headlines:
+                        news_context = (
+                            f"\n\n[Today's {region} headlines — available if you decide to check your phone]:\n{headlines}"
+                        )
 
-                text = await generate(prompt, use_search=use_search)
+                full_prompt = prompt + news_context
+                text = await generate(full_prompt)
                 text = text.strip()
 
                 if text.startswith("[mention]"):
@@ -291,9 +325,7 @@ async def on_message(message: discord.Message):
                     LAST_BOT_MESSAGE[message.channel.id] = (reply_text, sent.created_at.timestamp())
                     database.save_message(message.channel.id, bot.user.id, "Chii-sama", "assistant", reply_text)
             except Exception as e:
-                import traceback
                 print(f"[Gemini ERROR] {e}")
-                traceback.print_exc()
                 if "429" in str(e) or "quota" in str(e).lower():
                     await message.reply("...don't feel like talking right now.")
                 else:
