@@ -1,4 +1,7 @@
 import asyncio
+import base64
+import io
+import json
 import os
 import random
 import re
@@ -45,6 +48,30 @@ def fetch_news(region: str = "world", limit: int = 8) -> str:
     except Exception as e:
         print(f"[News fetch error] {e}")
         return ""
+
+
+def generate_image_sync(prompt: str) -> bytes | None:
+    model = "imagen-4.0-generate-preview-05-20"
+    url = (
+        f"https://generativelanguage.googleapis.com/v1beta/models/{model}:predict"
+        f"?key={GEMINI_KEYS[_key_index]}"
+    )
+    payload = json.dumps({
+        "instances": [{"prompt": prompt}],
+        "parameters": {"sampleCount": 1},
+    }).encode()
+    req = urllib.request.Request(
+        url, data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            result = json.loads(resp.read())
+        return base64.b64decode(result["predictions"][0]["bytesBase64Encoded"])
+    except Exception as e:
+        print(f"[Image gen error] {e}")
+        return None
 
 
 def get_model() -> genai.GenerativeModel:
@@ -494,6 +521,27 @@ async def speak(interaction: discord.Interaction, message: str):
 async def speak_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
     if isinstance(error, app_commands.MissingAnyRole):
         await interaction.response.send_message("You don't have permission to use this.", ephemeral=True)
+
+
+@bot.tree.command(name="draw", description="Have Chii-sama generate an image")
+@app_commands.describe(prompt="What to draw")
+async def draw(interaction: discord.Interaction, prompt: str):
+    await interaction.response.defer()
+    image_bytes = await asyncio.get_event_loop().run_in_executor(
+        None, lambda: generate_image_sync(prompt)
+    )
+    if image_bytes:
+        file = discord.File(io.BytesIO(image_bytes), filename="chiisama.png")
+        lines = [
+            f"*Chii-sama presents her masterpiece.*",
+            f"Fine, here. Don't say I never did anything for you.",
+            f"*slides image across the table* You're welcome.",
+            f"Chii-sama has graced you with her creativity. Appreciate it.",
+            f"*sighs* There. Happy now?",
+        ]
+        await interaction.followup.send(random.choice(lines), file=file)
+    else:
+        await interaction.followup.send("...it didn't work. Not that I tried that hard.")
 
 
 bot.run(DISCORD_TOKEN)
