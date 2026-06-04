@@ -543,7 +543,16 @@ async def draw(interaction: discord.Interaction, prompt: str):
         ]
         await interaction.followup.send(random.choice(lines), file=file)
     else:
-        await interaction.followup.send(f"[debug] {image_bytes}")
+        # list available imagen models for debugging
+        try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models?key={GEMINI_KEYS[_key_index]}&pageSize=200"
+            req = urllib.request.Request(url)
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read())
+            imagen_models = [m["name"] for m in data.get("models", []) if "imagen" in m["name"].lower()]
+            await interaction.followup.send(f"[debug] error: {image_bytes}\n\nAvailable imagen models:\n" + "\n".join(imagen_models))
+        except Exception:
+            await interaction.followup.send(f"[debug] {image_bytes}")
 
 
 bot.run(DISCORD_TOKEN)
