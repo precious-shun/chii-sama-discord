@@ -50,7 +50,7 @@ def fetch_news(region: str = "world", limit: int = 8) -> str:
         return ""
 
 
-def generate_image_sync(prompt: str) -> bytes | None:
+def generate_image_sync(prompt: str) -> bytes | str:
     model = "imagen-4.0-generate-preview-05-20"
     url = (
         f"https://generativelanguage.googleapis.com/v1beta/models/{model}:predict"
@@ -69,9 +69,11 @@ def generate_image_sync(prompt: str) -> bytes | None:
         with urllib.request.urlopen(req, timeout=30) as resp:
             result = json.loads(resp.read())
         return base64.b64decode(result["predictions"][0]["bytesBase64Encoded"])
+    except urllib.error.HTTPError as e:
+        body = e.read().decode()
+        return f"HTTP {e.code}: {body}"
     except Exception as e:
-        print(f"[Image gen error] {e}")
-        return None
+        return str(e)
 
 
 def get_model() -> genai.GenerativeModel:
@@ -530,18 +532,18 @@ async def draw(interaction: discord.Interaction, prompt: str):
     image_bytes = await asyncio.get_event_loop().run_in_executor(
         None, lambda: generate_image_sync(prompt)
     )
-    if image_bytes:
+    if isinstance(image_bytes, bytes):
         file = discord.File(io.BytesIO(image_bytes), filename="chiisama.png")
         lines = [
-            f"*Chii-sama presents her masterpiece.*",
-            f"Fine, here. Don't say I never did anything for you.",
-            f"*slides image across the table* You're welcome.",
-            f"Chii-sama has graced you with her creativity. Appreciate it.",
-            f"*sighs* There. Happy now?",
+            "*Chii-sama presents her masterpiece.*",
+            "Fine, here. Don't say I never did anything for you.",
+            "*slides image across the table* You're welcome.",
+            "Chii-sama has graced you with her creativity. Appreciate it.",
+            "*sighs* There. Happy now?",
         ]
         await interaction.followup.send(random.choice(lines), file=file)
     else:
-        await interaction.followup.send("...it didn't work. Not that I tried that hard.")
+        await interaction.followup.send(f"[debug] {image_bytes}")
 
 
 bot.run(DISCORD_TOKEN)
