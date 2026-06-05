@@ -346,6 +346,7 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 TRIGGER_PATTERN = re.compile(r'chii[\s-]?sama|chitose|karasuma', re.IGNORECASE)
+BEYOND_PATTERN = re.compile(r'^\?beyond\s+(\S+)', re.IGNORECASE)
 NEWS_PATTERN = re.compile(r'\bnews\b|headline|berita|kabar', re.IGNORECASE)
 LAST_BOT_MESSAGE: dict[int, tuple[str, float]] = {}  # channel_id -> (content, timestamp)
 FOLLOWUP_WINDOW = 60  # seconds
@@ -369,6 +370,20 @@ async def on_ready():
 async def on_message(message: discord.Message):
     if message.author.bot:
         return
+
+    beyond_match = BEYOND_PATTERN.match(message.content)
+    if beyond_match:
+        url = beyond_match.group(1)
+        url_match = re.search(r'dndbeyond\.com/characters/(\d+)', url)
+        if url_match or url.isdigit():
+            char_id = int(url_match.group(1)) if url_match else int(url)
+            char_data = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: fetch_character_sync(char_id)
+            )
+            if isinstance(char_data, dict):
+                data = char_data.get("data")
+                if data:
+                    database.link_character(message.author.id, char_id)
 
     is_reply_to_bot = False
     is_reply_to_other = False
