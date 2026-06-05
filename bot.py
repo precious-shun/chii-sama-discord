@@ -848,12 +848,14 @@ class RollButton(discord.ui.Button):
         if self.mode == "advantage":
             r1, r2 = random.randint(1, 20), random.randint(1, 20)
             roll = max(r1, r2)
-            base_text = f"2d20 ({r1}, {r2}) → {roll}" if modifier != 0 else f"2d20 ({r1}, {r2}) → **{roll}**"
+            dice_str = f"(**{r1}**, ~~{r2}~~)" if r1 >= r2 else f"(~~{r1}~~, **{r2}**)"
+            base_text = f"2d20kh1 {dice_str}"
             mode_tag = " (Advantage)"
         elif self.mode == "disadvantage":
             r1, r2 = random.randint(1, 20), random.randint(1, 20)
             roll = min(r1, r2)
-            base_text = f"2d20 ({r1}, {r2}) → {roll}" if modifier != 0 else f"2d20 ({r1}, {r2}) → **{roll}**"
+            dice_str = f"(**{r1}**, ~~{r2}~~)" if r1 <= r2 else f"(~~{r1}~~, **{r2}**)"
+            base_text = f"2d20kl1 {dice_str}"
             mode_tag = " (Disadvantage)"
         else:
             roll = random.randint(1, 20)
