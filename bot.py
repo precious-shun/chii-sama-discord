@@ -54,7 +54,7 @@ def fetch_news(region: str = "world", limit: int = 8) -> str:
 
 def generate_image_sync(prompt: str) -> bytes | str:
     boosted = f"masterpiece, best quality, highly detailed, {prompt}"
-    url = f"https://api.cloudflare.com/client/v4/accounts/{CF_ACCOUNT_ID}/ai/run/@cf/bytedance/stable-diffusion-xl-lightning"
+    url = f"https://api.cloudflare.com/client/v4/accounts/{CF_ACCOUNT_ID}/ai/run/@cf/black-forest-labs/flux-1-schnell"
     payload = json.dumps({"prompt": boosted}).encode()
     req = urllib.request.Request(
         url, data=payload,
