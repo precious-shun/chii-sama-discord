@@ -543,8 +543,7 @@ async def draw(interaction: discord.Interaction, prompt: str):
         ]
         await interaction.followup.send(random.choice(lines), file=file)
     else:
-        print(f"[Image gen error] {image_bytes}")
-        await interaction.followup.send("...it didn't work. Not that I tried that hard.")
+        await interaction.followup.send(f"[debug] {image_bytes}")
 
 
 bot.run(DISCORD_TOKEN)
