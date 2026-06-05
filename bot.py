@@ -1,10 +1,9 @@
 import asyncio
-import base64
 import io
-import json
 import os
 import random
 import re
+import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 from datetime import datetime
@@ -51,27 +50,11 @@ def fetch_news(region: str = "world", limit: int = 8) -> str:
 
 
 def generate_image_sync(prompt: str) -> bytes | str:
-    model = "imagen-4.0-generate-001"
-    url = (
-        f"https://generativelanguage.googleapis.com/v1beta/models/{model}:predict"
-        f"?key={GEMINI_KEYS[_key_index]}"
-    )
-    payload = json.dumps({
-        "instances": [{"prompt": prompt}],
-        "parameters": {"sampleCount": 1},
-    }).encode()
-    req = urllib.request.Request(
-        url, data=payload,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
+    url = "https://image.pollinations.ai/prompt/" + urllib.parse.quote(prompt)
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            result = json.loads(resp.read())
-        return base64.b64decode(result["predictions"][0]["bytesBase64Encoded"])
-    except urllib.error.HTTPError as e:
-        body = e.read().decode()
-        return f"HTTP {e.code}: {body}"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            return resp.read()
     except Exception as e:
         return str(e)
 
@@ -543,7 +526,8 @@ async def draw(interaction: discord.Interaction, prompt: str):
         ]
         await interaction.followup.send(random.choice(lines), file=file)
     else:
-        await interaction.followup.send(f"[debug] {image_bytes}")
+        print(f"[Image gen error] {image_bytes}")
+        await interaction.followup.send("...it didn't work. Not that I tried that hard.")
 
 
 bot.run(DISCORD_TOKEN)
