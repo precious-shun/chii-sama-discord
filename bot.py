@@ -59,7 +59,6 @@ def generate_image_sync(prompt: str) -> bytes | str:
     payload = json.dumps({
         "prompt": prompt,
         "params": {"n": 1, "width": 512, "height": 512, "steps": 20},
-        "models": ["stable_diffusion_xl"],
     }).encode()
     try:
         req = urllib.request.Request(
@@ -75,9 +74,9 @@ def generate_image_sync(prompt: str) -> bytes | str:
     except Exception as e:
         return str(e)
 
-    # Poll until done (max 2 minutes)
+    # Poll until done (max 5 minutes)
     check_headers = {"apikey": "0000000000"}
-    for _ in range(24):
+    for _ in range(60):
         time.sleep(5)
         try:
             req = urllib.request.Request(
