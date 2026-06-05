@@ -675,24 +675,35 @@ CHECK_OPTIONS = [
 ]
 
 
+class _PlayerSelect(discord.ui.UserSelect):
+    def __init__(self):
+        super().__init__(placeholder="Select players (1–4)...", min_values=1, max_values=4, row=0)
+
+    async def callback(self, interaction: discord.Interaction):
+        self.view.players = [m for m in self.values if isinstance(m, discord.Member)]
+        await interaction.response.defer()
+
+
+class _CheckSelect(discord.ui.Select):
+    def __init__(self):
+        super().__init__(
+            placeholder="Select check type...",
+            options=[discord.SelectOption(label=c) for c in CHECK_OPTIONS],
+            row=1,
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        self.view.check_type = self.values[0]
+        await interaction.response.defer()
+
+
 class RollSetupView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=120)
         self.players: list[discord.Member] = []
         self.check_type: str | None = None
-
-    @discord.ui.user_select(placeholder="Select players (1–4)...", min_values=1, max_values=4)
-    async def player_select(self, interaction: discord.Interaction, select: discord.ui.UserSelect):
-        self.players = [m for m in select.values if isinstance(m, discord.Member)]
-        await interaction.response.defer()
-
-    @discord.ui.select(
-        placeholder="Select check type...",
-        options=[discord.SelectOption(label=c) for c in CHECK_OPTIONS],
-    )
-    async def check_select(self, interaction: discord.Interaction, select: discord.ui.Select):
-        self.check_type = select.values[0]
-        await interaction.response.defer()
+        self.add_item(_PlayerSelect())
+        self.add_item(_CheckSelect())
 
     @discord.ui.button(label="Roll!", style=discord.ButtonStyle.success, row=2)
     async def submit(self, interaction: discord.Interaction, _button: discord.ui.Button):
