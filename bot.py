@@ -58,7 +58,7 @@ def generate_image_sync(prompt: str) -> bytes | str:
     # Submit job
     payload = json.dumps({
         "prompt": prompt,
-        "params": {"n": 1, "width": 1024, "height": 1024, "steps": 20},
+        "params": {"n": 1, "width": 512, "height": 512, "steps": 20},
         "models": ["stable_diffusion_xl"],
     }).encode()
     try:
