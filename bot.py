@@ -1,9 +1,10 @@
 import asyncio
 import io
+import json
 import os
 import random
 import re
-import urllib.parse
+import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
 from datetime import datetime
@@ -18,6 +19,7 @@ import database
 load_dotenv()
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
+HF_TOKEN = os.getenv("HF_TOKEN")
 
 GEMINI_KEYS = [v for k, v in sorted(os.environ.items()) if k.startswith("GEMINI_API_KEY_") and v]
 GEMINI_MODELS = ["gemini-2.5-flash", "gemini-3.5-flash"]
@@ -50,11 +52,21 @@ def fetch_news(region: str = "world", limit: int = 8) -> str:
 
 
 def generate_image_sync(prompt: str) -> bytes | str:
-    url = "https://image.pollinations.ai/prompt/" + urllib.parse.quote(prompt)
+    url = "https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell"
+    payload = json.dumps({"inputs": prompt}).encode()
+    req = urllib.request.Request(
+        url, data=payload,
+        headers={
+            "Authorization": f"Bearer {HF_TOKEN}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(req, timeout=60) as resp:
             return resp.read()
+    except urllib.error.HTTPError as e:
+        return f"HTTP {e.code}: {e.read().decode()}"
     except Exception as e:
         return str(e)
 
