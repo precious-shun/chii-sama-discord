@@ -383,7 +383,11 @@ async def on_message(message: discord.Message):
             if isinstance(char_data, dict):
                 data = char_data.get("data")
                 if data:
+                    char_name = data.get("name", "Unknown")
                     database.link_character(message.author.id, char_id)
+                    await message.channel.send(
+                        f"Character linked: **{char_name}** ({message.author.display_name})"
+                    )
 
     is_reply_to_bot = False
     is_reply_to_other = False
