@@ -668,8 +668,8 @@ async def draw(interaction: discord.Interaction, prompt: str):
 
 
 class RollButton(discord.ui.Button):
-    def __init__(self, player: discord.Member, check_type: str):
-        super().__init__(label=player.display_name, style=discord.ButtonStyle.primary)
+    def __init__(self, player: discord.Member, check_type: str, label: str):
+        super().__init__(label=label, style=discord.ButtonStyle.primary)
         self.player = player
         self.check_type = check_type
 
@@ -718,10 +718,10 @@ class RollButton(discord.ui.Button):
 
 
 class RollView(discord.ui.View):
-    def __init__(self, players: list[discord.Member], check_type: str):
+    def __init__(self, players: list[discord.Member], check_type: str, labels: list[str]):
         super().__init__(timeout=None)
-        for player in players:
-            self.add_item(RollButton(player, check_type))
+        for player, label in zip(players, labels):
+            self.add_item(RollButton(player, check_type, label))
 
 
 @bot.tree.command(name="rollrequest", description="Request players to roll a check")
@@ -738,10 +738,25 @@ async def rollrequest(
     player3: discord.Member | None = None,
     player4: discord.Member | None = None,
 ):
+    await interaction.response.defer()
     players = [p for p in [player1, player2, player3, player4] if p is not None]
+
+    async def get_label(p: discord.Member) -> str:
+        char_id = database.get_character_id(p.id)
+        if char_id:
+            char_data = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: fetch_character_sync(char_id)
+            )
+            if isinstance(char_data, dict):
+                name = (char_data.get("data") or {}).get("name")
+                if name:
+                    return name
+        return p.display_name
+
+    labels = await asyncio.gather(*[get_label(p) for p in players])
     mentions = " ".join(p.mention for p in players)
-    view = RollView(players, check)
-    await interaction.response.send_message(
+    view = RollView(players, check, list(labels))
+    await interaction.followup.send(
         f"{mentions} — the DM calls for a **{check} Check**.",
         view=view,
     )
