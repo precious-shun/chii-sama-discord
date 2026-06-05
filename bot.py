@@ -674,17 +674,20 @@ class RollButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.player.id:
-            await interaction.response.send_message("That's not your roll.", ephemeral=False)
+            await interaction.response.defer()
+            msg = await interaction.channel.send("That's not your roll.")
             await asyncio.sleep(4)
-            await interaction.delete_original_response()
+            await msg.delete()
             return
 
+        await interaction.response.defer()
         roll = random.randint(1, 20)
         self.disabled = True
         await interaction.message.edit(view=self.view)
 
         modifier = 0
         avatar_url = interaction.user.display_avatar.url
+        display_name = interaction.user.display_name
         char_id = database.get_character_id(self.player.id)
         if char_id:
             char_data = await asyncio.get_event_loop().run_in_executor(
@@ -695,6 +698,9 @@ class RollButton(discord.ui.Button):
                 if mod is not None:
                     modifier = mod
                 data = char_data.get("data") or {}
+                char_name = data.get("name")
+                if char_name:
+                    display_name = char_name
                 char_avatar = data.get("avatarUrl") or (data.get("decorations") or {}).get("avatarUrl")
                 if char_avatar:
                     avatar_url = char_avatar
@@ -708,12 +714,12 @@ class RollButton(discord.ui.Button):
             roll_text = f"1d20 (**{roll}**) = **{roll}**"
 
         embed = discord.Embed(
-            title=f"{interaction.user.display_name} makes a {self.check_type} check!",
+            title=f"{display_name} makes a {self.check_type} check!",
             description=roll_text,
             color=0xFFB7C5,
         )
         embed.set_thumbnail(url=avatar_url)
-        await interaction.response.send_message(embed=embed)
+        await interaction.channel.send(embed=embed)
 
 
 class RollView(discord.ui.View):
