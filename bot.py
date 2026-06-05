@@ -565,7 +565,7 @@ class RollButton(discord.ui.Button):
         await interaction.message.edit(view=self.view)
 
         if roll == 20:
-            flavor = "*Chii-sama goes very still.* ...Natural 20. Even I have to acknowledge that."
+            flavor = "勝ったな！ガハハ！"
         elif roll == 1:
             flavor = "*Chii-sama slowly looks away.* A natural 1. I did not see that."
         elif roll >= 15:
