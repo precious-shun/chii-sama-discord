@@ -68,9 +68,8 @@ def generate_image_sync(prompt: str) -> tuple[bytes, str] | str:
         with urllib.request.urlopen(req, timeout=60) as resp:
             content_type = resp.headers.get("Content-Type", "")
             data = resp.read()
-        print(f"[Draw] content_type={content_type} len={len(data)} first_bytes={data[:20]}")
         ext = "jpg" if "jpeg" in content_type or "jpg" in content_type else "png"
-        return (data, ext)
+        return (data, ext, f"ct={content_type} len={len(data)} start={data[:20]}")
     except urllib.error.HTTPError as e:
         return f"HTTP {e.code}: {e.read().decode()}"
     except Exception as e:
@@ -534,7 +533,8 @@ async def draw(interaction: discord.Interaction, prompt: str):
         None, lambda: generate_image_sync(prompt)
     )
     if isinstance(image_bytes, tuple):
-        data, ext = image_bytes
+        data, ext, dbg = image_bytes
+        await interaction.followup.send(f"[debug] {dbg}")
         file = discord.File(io.BytesIO(data), filename=f"chiisama.{ext}")
         lines = [
             "*Chii-sama presents her masterpiece.*",
