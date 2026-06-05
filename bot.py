@@ -538,15 +538,7 @@ async def pick(interaction: discord.Interaction, options: str):
         await interaction.response.send_message("Give at least two options.", ephemeral=True)
         return
     chosen = random.choice(choices)
-    responses = [
-        f"Aaaand the lucky pick is — **{chosen}**! Chii-sama has spoken~",
-        f"*reaches into the hat* ...and it's **{chosen}**! Congratulations~",
-        f"Drumroll please... **{chosen}**! You're welcome.",
-        f"The honor goes to — **{chosen}**! Not a bad choice, honestly.",
-        f"*unfolds the paper* Oh~ it's **{chosen}**! How exciting.",
-        f"And Chii-sama picks... **{chosen}**! Lucky~",
-    ]
-    await interaction.response.send_message(random.choice(responses))
+    await interaction.response.send_message(f"**{chosen}**")
 
 
 @bot.tree.command(name="daily", description="Claim your daily 100 coins")
@@ -689,22 +681,9 @@ class RollButton(discord.ui.Button):
         else:
             roll_text = f"1d20 (**{roll}**) = **{roll}**"
 
-        if roll == 20:
-            flavor = "勝ったな！ガハハ！"
-        elif roll == 1:
-            flavor = "*Chii-sama slowly looks away.* A natural 1. I did not see that."
-        elif total >= 20:
-            flavor = "勝ったな！ガハハ！"
-        elif total >= 15:
-            flavor = "Not bad. I suppose."
-        elif total >= 10:
-            flavor = "...Passable."
-        else:
-            flavor = "Mm. Well. That happened."
-
         embed = discord.Embed(
             title=f"{interaction.user.display_name} makes a {self.check_type} check!",
-            description=f"{roll_text}\n\n{flavor}",
+            description=roll_text,
             color=0xFFB7C5,
         )
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
