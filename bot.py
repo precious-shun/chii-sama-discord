@@ -549,18 +549,13 @@ async def draw(interaction: discord.Interaction, prompt: str):
 
 class RollButton(discord.ui.Button):
     def __init__(self, player: discord.Member, check_type: str):
-        super().__init__(
-            label=f"Roll for {check_type} Check",
-            style=discord.ButtonStyle.primary,
-        )
+        super().__init__(label=player.display_name, style=discord.ButtonStyle.primary)
         self.player = player
         self.check_type = check_type
 
     async def callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.player.id:
-            await interaction.response.send_message(
-                "That's not your roll.", ephemeral=True
-            )
+            await interaction.response.send_message("That's not your roll.", ephemeral=True)
             return
 
         roll = random.randint(1, 20)
@@ -584,17 +579,31 @@ class RollButton(discord.ui.Button):
 
 
 class RollView(discord.ui.View):
-    def __init__(self, player: discord.Member, check_type: str):
+    def __init__(self, players: list[discord.Member], check_type: str):
         super().__init__(timeout=300)
-        self.add_item(RollButton(player, check_type))
+        for player in players:
+            self.add_item(RollButton(player, check_type))
 
 
-@bot.tree.command(name="rollrequest", description="Request a player to roll a check")
-@app_commands.describe(player="The player who needs to roll", check="Type of check (e.g. Perception, Stealth)")
-async def rollrequest(interaction: discord.Interaction, player: discord.Member, check: str):
-    view = RollView(player, check)
+@bot.tree.command(name="rollrequest", description="Request players to roll a check")
+@app_commands.describe(
+    check="Type of check (e.g. Perception, Stealth)",
+    player1="First player", player2="Second player",
+    player3="Third player", player4="Fourth player",
+)
+async def rollrequest(
+    interaction: discord.Interaction,
+    check: str,
+    player1: discord.Member,
+    player2: discord.Member | None = None,
+    player3: discord.Member | None = None,
+    player4: discord.Member | None = None,
+):
+    players = [p for p in [player1, player2, player3, player4] if p is not None]
+    mentions = " ".join(p.mention for p in players)
+    view = RollView(players, check)
     await interaction.response.send_message(
-        f"{player.mention} — the DM calls for a **{check} Check**.",
+        f"{mentions} — the DM calls for a **{check} Check**.",
         view=view,
     )
 
