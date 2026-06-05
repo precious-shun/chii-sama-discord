@@ -99,7 +99,14 @@ def generate_image_sync(prompt: str) -> bytes | str:
         )
         with urllib.request.urlopen(req, timeout=10) as resp:
             result = json.loads(resp.read())
-        return base64.b64decode(result["generations"][0]["img"])
+        gen = result["generations"][0]
+        print(f"[Draw debug] keys={list(gen.keys())} img_len={len(gen.get('img',''))}")
+        img_data = gen.get("img", "")
+        if img_data.startswith("http"):
+            req2 = urllib.request.Request(img_data, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req2, timeout=15) as r:
+                return r.read()
+        return base64.b64decode(img_data)
     except Exception as e:
         return str(e)
 
