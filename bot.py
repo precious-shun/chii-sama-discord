@@ -68,6 +68,7 @@ def generate_image_sync(prompt: str) -> tuple[bytes, str] | str:
         with urllib.request.urlopen(req, timeout=60) as resp:
             content_type = resp.headers.get("Content-Type", "")
             data = resp.read()
+        print(f"[Draw] content_type={content_type} len={len(data)} first_bytes={data[:20]}")
         ext = "jpg" if "jpeg" in content_type or "jpg" in content_type else "png"
         return (data, ext)
     except urllib.error.HTTPError as e:
