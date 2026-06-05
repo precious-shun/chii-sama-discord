@@ -1,11 +1,9 @@
 import asyncio
-import base64
 import io
 import json
 import os
 import random
 import re
-import time
 import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -21,7 +19,8 @@ import database
 load_dotenv()
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-STABLE_HORDE_KEY = os.getenv("STABLE_HORDE_KEY", "0000000000")
+CF_ACCOUNT_ID = os.getenv("CF_ACCOUNT_ID")
+CF_API_TOKEN = os.getenv("CF_API_TOKEN")
 
 GEMINI_KEYS = [v for k, v in sorted(os.environ.items()) if k.startswith("GEMINI_API_KEY_") and v]
 GEMINI_MODELS = ["gemini-2.5-flash", "gemini-3.5-flash"]
@@ -54,62 +53,22 @@ def fetch_news(region: str = "world", limit: int = 8) -> str:
 
 
 def generate_image_sync(prompt: str) -> bytes | str:
-    headers = {"apikey": STABLE_HORDE_KEY, "Content-Type": "application/json"}
     boosted = f"masterpiece, best quality, highly detailed, {prompt}"
-
-    # Submit job
-    payload = json.dumps({
-        "prompt": boosted,
-        "params": {"n": 1, "width": 512, "height": 512, "steps": 25},
-        "models": ["FLUX.1-Schnell"],
-    }).encode()
+    url = f"https://api.cloudflare.com/client/v4/accounts/{CF_ACCOUNT_ID}/ai/run/@cf/bytedance/stable-diffusion-xl-lightning"
+    payload = json.dumps({"prompt": boosted}).encode()
+    req = urllib.request.Request(
+        url, data=payload,
+        headers={
+            "Authorization": f"Bearer {CF_API_TOKEN}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
     try:
-        req = urllib.request.Request(
-            "https://stablehorde.net/api/v2/generate/async",
-            data=payload, headers=headers, method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            job_id = json.loads(resp.read()).get("id")
-        if not job_id:
-            return "No job ID returned"
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            return resp.read()
     except urllib.error.HTTPError as e:
         return f"HTTP {e.code}: {e.read().decode()}"
-    except Exception as e:
-        return str(e)
-
-    # Poll until done (max 5 minutes)
-    check_headers = {"apikey": STABLE_HORDE_KEY}
-    for _ in range(60):
-        time.sleep(5)
-        try:
-            req = urllib.request.Request(
-                f"https://stablehorde.net/api/v2/generate/check/{job_id}",
-                headers=check_headers,
-            )
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                if json.loads(resp.read()).get("done"):
-                    break
-        except Exception:
-            continue
-    else:
-        return "Timed out waiting for image"
-
-    # Fetch result
-    try:
-        req = urllib.request.Request(
-            f"https://stablehorde.net/api/v2/generate/status/{job_id}",
-            headers=check_headers,
-        )
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            result = json.loads(resp.read())
-        gen = result["generations"][0]
-        print(f"[Draw debug] keys={list(gen.keys())} img_len={len(gen.get('img',''))}")
-        img_data = gen.get("img", "")
-        if img_data.startswith("http"):
-            req2 = urllib.request.Request(img_data, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req2, timeout=15) as r:
-                return r.read()
-        return base64.b64decode(img_data)
     except Exception as e:
         return str(e)
 
