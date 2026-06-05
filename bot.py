@@ -582,7 +582,7 @@ class RollButton(discord.ui.Button):
 
 class RollView(discord.ui.View):
     def __init__(self, players: list[discord.Member], check_type: str):
-        super().__init__(timeout=300)
+        super().__init__(timeout=None)
         for player in players:
             self.add_item(RollButton(player, check_type))
 
