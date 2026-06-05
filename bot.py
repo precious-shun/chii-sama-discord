@@ -575,9 +575,13 @@ class RollButton(discord.ui.Button):
         else:
             flavor = "Mm. Well. That happened."
 
-        await interaction.response.send_message(
-            f"{interaction.user.mention} rolled **{roll}** for **{self.check_type} Check**!\n{flavor}"
+        embed = discord.Embed(
+            title=f"{interaction.user.display_name} makes a {self.check_type} check!",
+            description=f"1d20 (**{roll}**) = **{roll}**\n\n{flavor}",
+            color=0xFFB7C5,
         )
+        embed.set_thumbnail(url=interaction.user.display_avatar.url)
+        await interaction.response.send_message(embed=embed)
 
 
 class RollView(discord.ui.View):
