@@ -548,16 +548,18 @@ async def draw(interaction: discord.Interaction, prompt: str):
 
 
 class RollButton(discord.ui.Button):
-    def __init__(self, player: discord.Member, check_type: str, channel: discord.TextChannel):
-        super().__init__(
-            label=f"Roll for {check_type} Check",
-            style=discord.ButtonStyle.primary,
-        )
+    def __init__(self, player: discord.Member, check_type: str):
+        super().__init__(label=player.display_name, style=discord.ButtonStyle.primary)
         self.player = player
         self.check_type = check_type
-        self.channel = channel
 
     async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.player.id:
+            await interaction.response.send_message("That's not your roll.", ephemeral=False)
+            await asyncio.sleep(4)
+            await interaction.delete_original_response()
+            return
+
         roll = random.randint(1, 20)
         self.disabled = True
         await interaction.message.edit(view=self.view)
@@ -573,16 +575,16 @@ class RollButton(discord.ui.Button):
         else:
             flavor = "Mm. Well. That happened."
 
-        await self.channel.send(
-            f"{self.player.mention} rolled **{roll}** for **{self.check_type} Check**!\n{flavor}"
+        await interaction.response.send_message(
+            f"{interaction.user.mention} rolled **{roll}** for **{self.check_type} Check**!\n{flavor}"
         )
-        await interaction.response.send_message("Roll sent!", ephemeral=True)
 
 
 class RollView(discord.ui.View):
-    def __init__(self, player: discord.Member, check_type: str, channel: discord.TextChannel):
+    def __init__(self, players: list[discord.Member], check_type: str):
         super().__init__(timeout=300)
-        self.add_item(RollButton(player, check_type, channel))
+        for player in players:
+            self.add_item(RollButton(player, check_type))
 
 
 @bot.tree.command(name="rollrequest", description="Request players to roll a check")
@@ -601,26 +603,11 @@ async def rollrequest(
 ):
     players = [p for p in [player1, player2, player3, player4] if p is not None]
     mentions = " ".join(p.mention for p in players)
-
+    view = RollView(players, check)
     await interaction.response.send_message(
-        f"{mentions} — the DM calls for a **{check} Check**. Check your DMs."
+        f"{mentions} — the DM calls for a **{check} Check**.",
+        view=view,
     )
-
-    failed = []
-    for player in players:
-        view = RollView(player, check, interaction.channel)
-        try:
-            await player.send(
-                f"The DM is requesting a **{check} Check** from you!", view=view
-            )
-        except discord.Forbidden:
-            failed.append(player.mention)
-
-    if failed:
-        await interaction.followup.send(
-            f"Couldn't DM {', '.join(failed)} — they may have DMs disabled.",
-            ephemeral=True,
-        )
 
 
 bot.run(DISCORD_TOKEN)
