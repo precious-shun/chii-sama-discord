@@ -1,9 +1,11 @@
 import asyncio
+import base64
 import io
 import json
 import os
 import random
 import re
+import time
 import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -19,7 +21,6 @@ import database
 load_dotenv()
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-HF_TOKEN = os.getenv("HF_TOKEN")
 
 GEMINI_KEYS = [v for k, v in sorted(os.environ.items()) if k.startswith("GEMINI_API_KEY_") and v]
 GEMINI_MODELS = ["gemini-2.5-flash", "gemini-3.5-flash"]
@@ -52,21 +53,54 @@ def fetch_news(region: str = "world", limit: int = 8) -> str:
 
 
 def generate_image_sync(prompt: str) -> bytes | str:
-    url = "https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell"
-    payload = json.dumps({"inputs": prompt}).encode()
-    req = urllib.request.Request(
-        url, data=payload,
-        headers={
-            "Authorization": f"Bearer {HF_TOKEN}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
+    headers = {"apikey": "0000000000", "Content-Type": "application/json"}
+
+    # Submit job
+    payload = json.dumps({
+        "prompt": prompt,
+        "params": {"n": 1, "width": 1024, "height": 1024, "steps": 20},
+        "models": ["stable_diffusion_xl"],
+    }).encode()
     try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            return resp.read()
+        req = urllib.request.Request(
+            "https://stablehorde.net/api/v2/generate/async",
+            data=payload, headers=headers, method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            job_id = json.loads(resp.read()).get("id")
+        if not job_id:
+            return "No job ID returned"
     except urllib.error.HTTPError as e:
         return f"HTTP {e.code}: {e.read().decode()}"
+    except Exception as e:
+        return str(e)
+
+    # Poll until done (max 2 minutes)
+    check_headers = {"apikey": "0000000000"}
+    for _ in range(24):
+        time.sleep(5)
+        try:
+            req = urllib.request.Request(
+                f"https://stablehorde.net/api/v2/generate/check/{job_id}",
+                headers=check_headers,
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                if json.loads(resp.read()).get("done"):
+                    break
+        except Exception:
+            continue
+    else:
+        return "Timed out waiting for image"
+
+    # Fetch result
+    try:
+        req = urllib.request.Request(
+            f"https://stablehorde.net/api/v2/generate/status/{job_id}",
+            headers=check_headers,
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            result = json.loads(resp.read())
+        return base64.b64decode(result["generations"][0]["img"])
     except Exception as e:
         return str(e)
 
