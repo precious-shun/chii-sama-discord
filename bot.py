@@ -21,6 +21,7 @@ import database
 load_dotenv()
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
+STABLE_HORDE_KEY = os.getenv("STABLE_HORDE_KEY", "0000000000")
 
 GEMINI_KEYS = [v for k, v in sorted(os.environ.items()) if k.startswith("GEMINI_API_KEY_") and v]
 GEMINI_MODELS = ["gemini-2.5-flash", "gemini-3.5-flash"]
@@ -53,12 +54,14 @@ def fetch_news(region: str = "world", limit: int = 8) -> str:
 
 
 def generate_image_sync(prompt: str) -> bytes | str:
-    headers = {"apikey": "0000000000", "Content-Type": "application/json"}
+    headers = {"apikey": STABLE_HORDE_KEY, "Content-Type": "application/json"}
+    boosted = f"masterpiece, best quality, highly detailed, {prompt}"
 
     # Submit job
     payload = json.dumps({
-        "prompt": prompt,
-        "params": {"n": 1, "width": 512, "height": 512, "steps": 20},
+        "prompt": boosted,
+        "params": {"n": 1, "width": 1024, "height": 1024, "steps": 30},
+        "models": ["FLUX.1-Schnell"],
     }).encode()
     try:
         req = urllib.request.Request(
@@ -75,7 +78,7 @@ def generate_image_sync(prompt: str) -> bytes | str:
         return str(e)
 
     # Poll until done (max 5 minutes)
-    check_headers = {"apikey": "0000000000"}
+    check_headers = {"apikey": STABLE_HORDE_KEY}
     for _ in range(60):
         time.sleep(5)
         try:
