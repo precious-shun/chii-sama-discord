@@ -770,70 +770,48 @@ class RollConfigView(discord.ui.View):
     async def roll(self, interaction: discord.Interaction, _button: discord.ui.Button):
         await interaction.response.defer()
 
-        async def get_char_info(sel: _PlayerModeSelect) -> tuple[int, str, str]:
-            modifier = 0
-            display_name = sel.player_label
-            avatar_url = sel.player.display_avatar.url
+        async def get_label(sel: _PlayerModeSelect) -> str:
             char_id = database.get_character_id(sel.player.id)
             if char_id:
                 char_data = await asyncio.get_event_loop().run_in_executor(
                     None, lambda cid=char_id: fetch_character_sync(cid)
                 )
                 if isinstance(char_data, dict):
-                    mod = calc_modifier(char_data, self.check_type)
-                    if mod is not None:
-                        modifier = mod
-                    data = char_data.get("data") or {}
-                    char_avatar = data.get("avatarUrl") or (data.get("decorations") or {}).get("avatarUrl")
-                    if char_avatar:
-                        avatar_url = char_avatar
-            return modifier, display_name, avatar_url
+                    name = (char_data.get("data") or {}).get("name")
+                    if name:
+                        return name
+            return sel.player.display_name
 
-        char_infos = await asyncio.gather(*[get_char_info(sel) for sel in self.player_selects])
+        labels = list(await asyncio.gather(*[get_label(sel) for sel in self.player_selects]))
+        players = [sel.player for sel in self.player_selects]
+        modes = [sel.mode for sel in self.player_selects]
 
         for item in self.children:
             item.disabled = True
         await interaction.message.edit(view=self)
 
-        for sel, (modifier, display_name, avatar_url) in zip(self.player_selects, char_infos):
-            mode = sel.mode
-            if mode == "advantage":
-                r1, r2 = random.randint(1, 20), random.randint(1, 20)
-                roll = max(r1, r2)
-                roll_str = f"2d20 ({r1}, {r2}) → {roll}"
-                mode_tag = " (Advantage)"
-            elif mode == "disadvantage":
-                r1, r2 = random.randint(1, 20), random.randint(1, 20)
-                roll = min(r1, r2)
-                roll_str = f"2d20 ({r1}, {r2}) → {roll}"
-                mode_tag = " (Disadvantage)"
-            else:
-                roll = random.randint(1, 20)
-                roll_str = f"1d20 ({roll})" if modifier != 0 else f"1d20 (**{roll}**)"
-                mode_tag = ""
+        all_mentions = " ".join(p.mention for p in players)
+        msg = f"{all_mentions} — the DM calls for a **{self.check_type} Check**."
+        adv = [sel.player.mention for sel in self.player_selects if sel.mode == "advantage"]
+        dis = [sel.player.mention for sel in self.player_selects if sel.mode == "disadvantage"]
+        if adv:
+            msg += f" {' '.join(adv)} roll with **Advantage**."
+        if dis:
+            msg += f" {' '.join(dis)} roll with **Disadvantage**."
 
-            total = roll + modifier
-            if modifier > 0:
-                full_text = f"{roll_str} + {modifier} = **{total}**"
-            elif modifier < 0:
-                full_text = f"{roll_str} - {abs(modifier)} = **{total}**"
-            else:
-                full_text = f"{roll_str} = **{roll}**"
-
-            embed = discord.Embed(
-                title=f"{display_name} makes a {self.check_type}{mode_tag} check!",
-                description=full_text,
-                color=0xFFB7C5,
-            )
-            embed.set_thumbnail(url=avatar_url)
-            await interaction.channel.send(sel.player.mention, embed=embed)
+        roll_view = RollView(players, self.check_type, labels, modes)
+        await interaction.channel.send(msg, view=roll_view)
 
 
 class RollButton(discord.ui.Button):
-    def __init__(self, player: discord.Member, check_type: str, label: str):
-        super().__init__(label=label, style=discord.ButtonStyle.primary)
+    def __init__(self, player: discord.Member, check_type: str, label: str, mode: str = "normal"):
+        style = discord.ButtonStyle.success if mode == "advantage" else \
+                discord.ButtonStyle.danger if mode == "disadvantage" else \
+                discord.ButtonStyle.primary
+        super().__init__(label=label, style=style)
         self.player = player
         self.check_type = check_type
+        self.mode = mode
 
     async def callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.player.id:
@@ -844,7 +822,6 @@ class RollButton(discord.ui.Button):
             return
 
         await interaction.response.defer()
-        roll = random.randint(1, 20)
         self.disabled = True
         await interaction.message.edit(view=self.view)
 
@@ -854,7 +831,7 @@ class RollButton(discord.ui.Button):
         char_id = database.get_character_id(self.player.id)
         if char_id:
             char_data = await asyncio.get_event_loop().run_in_executor(
-                None, lambda: fetch_character_sync(char_id)
+                None, lambda cid=char_id: fetch_character_sync(cid)
             )
             if isinstance(char_data, dict):
                 mod = calc_modifier(char_data, self.check_type)
@@ -868,16 +845,31 @@ class RollButton(discord.ui.Button):
                 if char_avatar:
                     avatar_url = char_avatar
 
+        if self.mode == "advantage":
+            r1, r2 = random.randint(1, 20), random.randint(1, 20)
+            roll = max(r1, r2)
+            base_text = f"2d20 ({r1}, {r2}) → {roll}" if modifier != 0 else f"2d20 ({r1}, {r2}) → **{roll}**"
+            mode_tag = " (Advantage)"
+        elif self.mode == "disadvantage":
+            r1, r2 = random.randint(1, 20), random.randint(1, 20)
+            roll = min(r1, r2)
+            base_text = f"2d20 ({r1}, {r2}) → {roll}" if modifier != 0 else f"2d20 ({r1}, {r2}) → **{roll}**"
+            mode_tag = " (Disadvantage)"
+        else:
+            roll = random.randint(1, 20)
+            base_text = f"1d20 ({roll})" if modifier != 0 else f"1d20 (**{roll}**)"
+            mode_tag = ""
+
         total = roll + modifier
         if modifier > 0:
-            roll_text = f"1d20 ({roll}) + {modifier} = **{total}**"
+            roll_text = f"{base_text} + {modifier} = **{total}**"
         elif modifier < 0:
-            roll_text = f"1d20 ({roll}) - {abs(modifier)} = **{total}**"
+            roll_text = f"{base_text} - {abs(modifier)} = **{total}**"
         else:
-            roll_text = f"1d20 (**{roll}**) = **{roll}**"
+            roll_text = f"{base_text} = **{roll}**"
 
         embed = discord.Embed(
-            title=f"{display_name} makes a {self.check_type} check!",
+            title=f"{display_name} makes a {self.check_type}{mode_tag} check!",
             description=roll_text,
             color=0xFFB7C5,
         )
@@ -886,10 +878,12 @@ class RollButton(discord.ui.Button):
 
 
 class RollView(discord.ui.View):
-    def __init__(self, players: list[discord.Member], check_type: str, labels: list[str]):
+    def __init__(self, players: list[discord.Member], check_type: str, labels: list[str], modes: list[str] | None = None):
         super().__init__(timeout=None)
-        for player, label in zip(players, labels):
-            self.add_item(RollButton(player, check_type, label))
+        if modes is None:
+            modes = ["normal"] * len(players)
+        for player, label, mode in zip(players, labels, modes):
+            self.add_item(RollButton(player, check_type, label, mode))
 
 
 @bot.tree.command(name="rollrequest", description="Request players to roll a check")
