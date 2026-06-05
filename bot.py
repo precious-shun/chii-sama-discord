@@ -547,4 +547,62 @@ async def draw(interaction: discord.Interaction, prompt: str):
         await interaction.followup.send(f"[debug] {image_bytes}")
 
 
+class RollButton(discord.ui.Button):
+    def __init__(self, player: discord.Member, check_type: str):
+        super().__init__(
+            label=f"Roll for {check_type} Check",
+            style=discord.ButtonStyle.primary,
+        )
+        self.player = player
+        self.check_type = check_type
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.player.id:
+            await interaction.response.send_message(
+                "That's not your roll.", ephemeral=True
+            )
+            return
+
+        roll = random.randint(1, 20)
+        self.disabled = True
+        await interaction.message.edit(view=self.view)
+
+        if roll == 20:
+            flavor = "*Chii-sama goes very still.* ...Natural 20. Even I have to acknowledge that."
+        elif roll == 1:
+            flavor = "*Chii-sama slowly looks away.* A natural 1. I did not see that."
+        elif roll >= 15:
+            flavor = "Not bad. I suppose."
+        elif roll >= 10:
+            flavor = "...Passable."
+        else:
+            flavor = "Mm. Well. That happened."
+
+        await interaction.response.send_message(
+            f"{interaction.user.mention} rolled **{roll}** for **{self.check_type} Check**!\n{flavor}"
+        )
+
+
+class RollView(discord.ui.View):
+    def __init__(self, player: discord.Member, check_type: str):
+        super().__init__(timeout=300)
+        self.add_item(RollButton(player, check_type))
+
+
+@bot.tree.command(name="rollrequest", description="Request a player to roll a check")
+@app_commands.describe(player="The player who needs to roll", check="Type of check (e.g. Perception, Stealth)")
+@app_commands.checks.has_any_role("DM")
+async def rollrequest(interaction: discord.Interaction, player: discord.Member, check: str):
+    view = RollView(player, check)
+    await interaction.response.send_message(
+        f"{player.mention} — the DM calls for a **{check} Check**.",
+        view=view,
+    )
+
+@rollrequest.error
+async def rollrequest_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    if isinstance(error, app_commands.MissingAnyRole):
+        await interaction.response.send_message("Only the DM can request rolls.", ephemeral=True)
+
+
 bot.run(DISCORD_TOKEN)
