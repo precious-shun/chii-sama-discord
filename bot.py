@@ -820,69 +820,62 @@ class RollButton(discord.ui.Button):
             await interaction.delete_original_response()
             return
 
-        try:
-            await interaction.response.defer()
-            self.disabled = True
-            await interaction.message.edit(view=self.view)
+        await interaction.response.defer()
+        self.disabled = True
+        await interaction.message.edit(view=self.view)
 
-            modifier = 0
-            avatar_url = interaction.user.display_avatar.url
-            display_name = interaction.user.display_name
-            char_id = database.get_character_id(self.player.id)
-            if char_id:
-                char_data = await asyncio.get_event_loop().run_in_executor(
-                    None, lambda cid=char_id: fetch_character_sync(cid)
-                )
-                if isinstance(char_data, dict):
-                    mod = calc_modifier(char_data, self.check_type)
-                    if mod is not None:
-                        modifier = mod
-                    data = char_data.get("data") or {}
-                    char_name = data.get("name")
-                    if char_name:
-                        display_name = char_name
-                    char_avatar = data.get("avatarUrl") or (data.get("decorations") or {}).get("avatarUrl")
-                    if char_avatar:
-                        avatar_url = char_avatar
-
-            if self.mode == "advantage":
-                r1, r2 = random.randint(1, 20), random.randint(1, 20)
-                roll = max(r1, r2)
-                dice_str = f"(**{r1}**, ~~{r2}~~)" if r1 >= r2 else f"(~~{r1}~~, **{r2}**)"
-                base_text = f"2d20kh1 {dice_str}"
-                mode_tag = " (Advantage)"
-            elif self.mode == "disadvantage":
-                r1, r2 = random.randint(1, 20), random.randint(1, 20)
-                roll = min(r1, r2)
-                dice_str = f"(**{r1}**, ~~{r2}~~)" if r1 <= r2 else f"(~~{r1}~~, **{r2}**)"
-                base_text = f"2d20kl1 {dice_str}"
-                mode_tag = " (Disadvantage)"
-            else:
-                roll = random.randint(1, 20)
-                base_text = f"1d20 ({roll})" if modifier != 0 else f"1d20 (**{roll}**)"
-                mode_tag = ""
-
-            total = roll + modifier
-            if modifier > 0:
-                roll_text = f"{base_text} + {modifier} = **{total}**"
-            elif modifier < 0:
-                roll_text = f"{base_text} - {abs(modifier)} = **{total}**"
-            else:
-                roll_text = f"{base_text} = **{roll}**"
-
-            embed = discord.Embed(
-                title=f"{display_name} makes a {self.check_type}{mode_tag} check!",
-                description=roll_text,
-                color=0xFFB7C5,
+        modifier = 0
+        avatar_url = interaction.user.display_avatar.url
+        display_name = interaction.user.display_name
+        char_id = database.get_character_id(self.player.id)
+        if char_id:
+            char_data = await asyncio.get_event_loop().run_in_executor(
+                None, lambda cid=char_id: fetch_character_sync(cid)
             )
-            embed.set_thumbnail(url=avatar_url)
-            await interaction.channel.send(embed=embed)
-        except Exception as e:
-            print(f"[RollButton ERROR] {e}")
-            try:
-                await interaction.followup.send(f"[debug] {e}", ephemeral=True)
-            except Exception:
-                pass
+            if isinstance(char_data, dict):
+                mod = calc_modifier(char_data, self.check_type)
+                if mod is not None:
+                    modifier = mod
+                data = char_data.get("data") or {}
+                char_name = data.get("name")
+                if char_name:
+                    display_name = char_name
+                char_avatar = data.get("avatarUrl") or (data.get("decorations") or {}).get("avatarUrl")
+                if char_avatar:
+                    avatar_url = char_avatar
+
+        if self.mode == "advantage":
+            r1, r2 = random.randint(1, 20), random.randint(1, 20)
+            roll = max(r1, r2)
+            dice_str = f"(**{r1}**, ~~{r2}~~)" if r1 >= r2 else f"(~~{r1}~~, **{r2}**)"
+            base_text = f"2d20kh1 {dice_str}"
+            mode_tag = " (Advantage)"
+        elif self.mode == "disadvantage":
+            r1, r2 = random.randint(1, 20), random.randint(1, 20)
+            roll = min(r1, r2)
+            dice_str = f"(**{r1}**, ~~{r2}~~)" if r1 <= r2 else f"(~~{r1}~~, **{r2}**)"
+            base_text = f"2d20kl1 {dice_str}"
+            mode_tag = " (Disadvantage)"
+        else:
+            roll = random.randint(1, 20)
+            base_text = f"1d20 ({roll})" if modifier != 0 else f"1d20 (**{roll}**)"
+            mode_tag = ""
+
+        total = roll + modifier
+        if modifier > 0:
+            roll_text = f"{base_text} + {modifier} = **{total}**"
+        elif modifier < 0:
+            roll_text = f"{base_text} - {abs(modifier)} = **{total}**"
+        else:
+            roll_text = f"{base_text} = **{roll}**"
+
+        embed = discord.Embed(
+            title=f"{display_name} makes a {self.check_type}{mode_tag} check!",
+            description=roll_text,
+            color=0xFFB7C5,
+        )
+        embed.set_thumbnail(url=avatar_url)
+        await interaction.channel.send(embed=embed)
 
 
 class RollView(discord.ui.View):
