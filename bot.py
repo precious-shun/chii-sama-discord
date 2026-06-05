@@ -538,7 +538,8 @@ async def pick(interaction: discord.Interaction, options: str):
         await interaction.response.send_message("Give at least two options.", ephemeral=True)
         return
     chosen = random.choice(choices)
-    await interaction.response.send_message(f"**{chosen}**")
+    display = ", ".join(f"**{c}**" if c == chosen else c for c in choices)
+    await interaction.response.send_message(f"Pick: {display}")
 
 
 @bot.tree.command(name="daily", description="Claim your daily 100 coins")
