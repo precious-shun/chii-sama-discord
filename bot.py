@@ -666,6 +666,71 @@ async def draw(interaction: discord.Interaction, prompt: str):
         await interaction.followup.send(f"[debug] {image_bytes}")
 
 
+CHECK_OPTIONS = [
+    "Acrobatics", "Animal Handling", "Arcana", "Athletics", "Deception",
+    "History", "Insight", "Intimidation", "Investigation", "Medicine",
+    "Nature", "Perception", "Performance", "Persuasion", "Religion",
+    "Sleight of Hand", "Stealth", "Survival",
+    "Strength", "Dexterity", "Constitution", "Intelligence", "Wisdom", "Charisma",
+]
+
+
+class RollSetupView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=120)
+        self.players: list[discord.Member] = []
+        self.check_type: str | None = None
+
+    @discord.ui.user_select(placeholder="Select players (1–4)...", min_values=1, max_values=4)
+    async def player_select(self, interaction: discord.Interaction, select: discord.ui.UserSelect):
+        self.players = [m for m in select.values if isinstance(m, discord.Member)]
+        await interaction.response.defer()
+
+    @discord.ui.select(
+        placeholder="Select check type...",
+        options=[discord.SelectOption(label=c) for c in CHECK_OPTIONS],
+    )
+    async def check_select(self, interaction: discord.Interaction, select: discord.ui.Select):
+        self.check_type = select.values[0]
+        await interaction.response.defer()
+
+    @discord.ui.button(label="Roll!", style=discord.ButtonStyle.success, row=2)
+    async def submit(self, interaction: discord.Interaction, _button: discord.ui.Button):
+        if not self.players:
+            await interaction.response.send_message("Select at least one player first.", ephemeral=True)
+            return
+        if not self.check_type:
+            await interaction.response.send_message("Select a check type first.", ephemeral=True)
+            return
+
+        await interaction.response.defer()
+
+        async def get_label(p: discord.Member) -> str:
+            char_id = database.get_character_id(p.id)
+            if char_id:
+                char_data = await asyncio.get_event_loop().run_in_executor(
+                    None, lambda: fetch_character_sync(char_id)
+                )
+                if isinstance(char_data, dict):
+                    name = (char_data.get("data") or {}).get("name")
+                    if name:
+                        return name
+            return p.display_name
+
+        labels = await asyncio.gather(*[get_label(p) for p in self.players])
+        mentions = " ".join(p.mention for p in self.players)
+        roll_view = RollView(self.players, self.check_type, list(labels))
+
+        for item in self.children:
+            item.disabled = True
+        await interaction.message.edit(view=self)
+
+        await interaction.channel.send(
+            f"{mentions} — the DM calls for a **{self.check_type} Check**.",
+            view=roll_view,
+        )
+
+
 class RollButton(discord.ui.Button):
     def __init__(self, player: discord.Member, check_type: str, label: str):
         super().__init__(label=label, style=discord.ButtonStyle.primary)
@@ -808,6 +873,13 @@ async def linkcharacter(interaction: discord.Interaction, url: str):
         f"Linked **{char_name}** to your account. Your rolls will now include modifiers.",
         ephemeral=True,
     )
+
+
+@bot.tree.command(name="rolltest", description="[Test] Set up a roll request using select menus")
+async def rolltest(interaction: discord.Interaction):
+    view = RollSetupView()
+    await interaction.response.defer(ephemeral=True, thinking=False)
+    await interaction.channel.send("**Roll Request Setup**", view=view)
 
 
 bot.run(DISCORD_TOKEN)
