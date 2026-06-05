@@ -539,7 +539,9 @@ async def pick(interaction: discord.Interaction, options: str):
         return
     chosen = random.choice(choices)
     display = ", ".join(f"**{c}**" if c == chosen else c for c in choices)
-    await interaction.response.send_message(f"Pick: {display}")
+    await interaction.response.defer(ephemeral=True)
+    await interaction.delete_original_response()
+    await interaction.channel.send(f"Pick: {display}")
 
 
 @bot.tree.command(name="daily", description="Claim your daily 100 coins")
