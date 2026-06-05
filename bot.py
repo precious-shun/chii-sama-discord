@@ -591,18 +591,12 @@ class RollView(discord.ui.View):
 
 @bot.tree.command(name="rollrequest", description="Request a player to roll a check")
 @app_commands.describe(player="The player who needs to roll", check="Type of check (e.g. Perception, Stealth)")
-@app_commands.checks.has_any_role("DM")
 async def rollrequest(interaction: discord.Interaction, player: discord.Member, check: str):
     view = RollView(player, check)
     await interaction.response.send_message(
         f"{player.mention} — the DM calls for a **{check} Check**.",
         view=view,
     )
-
-@rollrequest.error
-async def rollrequest_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
-    if isinstance(error, app_commands.MissingAnyRole):
-        await interaction.response.send_message("Only the DM can request rolls.", ephemeral=True)
 
 
 bot.run(DISCORD_TOKEN)
