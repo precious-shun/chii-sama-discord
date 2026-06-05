@@ -815,10 +815,9 @@ class RollButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.player.id:
-            await interaction.response.defer()
-            msg = await interaction.channel.send("That's not your roll.")
+            await interaction.response.send_message("That's not your roll.")
             await asyncio.sleep(4)
-            await msg.delete()
+            await interaction.delete_original_response()
             return
 
         await interaction.response.defer()
