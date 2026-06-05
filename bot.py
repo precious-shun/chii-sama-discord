@@ -60,7 +60,7 @@ def generate_image_sync(prompt: str) -> bytes | str:
     # Submit job
     payload = json.dumps({
         "prompt": boosted,
-        "params": {"n": 1, "width": 1024, "height": 1024, "steps": 30},
+        "params": {"n": 1, "width": 512, "height": 512, "steps": 25},
         "models": ["FLUX.1-Schnell"],
     }).encode()
     try:
