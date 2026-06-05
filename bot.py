@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import io
 import json
 import os
@@ -52,7 +53,7 @@ def fetch_news(region: str = "world", limit: int = 8) -> str:
         return ""
 
 
-def generate_image_sync(prompt: str) -> tuple[bytes, str] | str:
+def generate_image_sync(prompt: str) -> bytes | str:
     boosted = f"masterpiece, best quality, highly detailed, {prompt}"
     url = f"https://api.cloudflare.com/client/v4/accounts/{CF_ACCOUNT_ID}/ai/run/@cf/black-forest-labs/flux-1-schnell"
     payload = json.dumps({"prompt": boosted}).encode()
@@ -66,10 +67,10 @@ def generate_image_sync(prompt: str) -> tuple[bytes, str] | str:
     )
     try:
         with urllib.request.urlopen(req, timeout=60) as resp:
-            content_type = resp.headers.get("Content-Type", "")
             data = resp.read()
-        ext = "jpg" if "jpeg" in content_type or "jpg" in content_type else "png"
-        return (data, ext, f"ct={content_type} len={len(data)} start={data[:20]}")
+        result = json.loads(data)
+        img_b64 = result["result"]["image"]
+        return base64.b64decode(img_b64)
     except urllib.error.HTTPError as e:
         return f"HTTP {e.code}: {e.read().decode()}"
     except Exception as e:
@@ -532,10 +533,8 @@ async def draw(interaction: discord.Interaction, prompt: str):
     image_bytes = await asyncio.get_event_loop().run_in_executor(
         None, lambda: generate_image_sync(prompt)
     )
-    if isinstance(image_bytes, tuple):
-        data, ext, dbg = image_bytes
-        await interaction.followup.send(f"[debug] {dbg}")
-        file = discord.File(io.BytesIO(data), filename=f"chiisama.{ext}")
+    if isinstance(image_bytes, bytes):
+        file = discord.File(io.BytesIO(image_bytes), filename="chiisama.png")
         lines = [
             "*Chii-sama presents her masterpiece.*",
             "Fine, here. Don't say I never did anything for you.",
