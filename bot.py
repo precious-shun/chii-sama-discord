@@ -685,6 +685,7 @@ class RollButton(discord.ui.Button):
         await interaction.message.edit(view=self.view)
 
         modifier = 0
+        avatar_url = interaction.user.display_avatar.url
         char_id = database.get_character_id(self.player.id)
         if char_id:
             char_data = await asyncio.get_event_loop().run_in_executor(
@@ -694,6 +695,10 @@ class RollButton(discord.ui.Button):
                 mod = calc_modifier(char_data, self.check_type)
                 if mod is not None:
                     modifier = mod
+                data = char_data.get("data") or {}
+                char_avatar = data.get("avatarUrl") or (data.get("decorations") or {}).get("avatarUrl")
+                if char_avatar:
+                    avatar_url = char_avatar
 
         total = roll + modifier
         if modifier > 0:
@@ -708,7 +713,7 @@ class RollButton(discord.ui.Button):
             description=roll_text,
             color=0xFFB7C5,
         )
-        embed.set_thumbnail(url=interaction.user.display_avatar.url)
+        embed.set_thumbnail(url=avatar_url)
         await interaction.response.send_message(embed=embed)
 
 
