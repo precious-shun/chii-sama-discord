@@ -53,6 +53,112 @@ def fetch_news(region: str = "world", limit: int = 8) -> str:
         return ""
 
 
+SKILL_INFO: dict[str, tuple[int, str]] = {
+    "acrobatics": (2, "acrobatics"),
+    "animal handling": (5, "animal-handling"),
+    "arcana": (4, "arcana"),
+    "athletics": (1, "athletics"),
+    "deception": (6, "deception"),
+    "history": (4, "history"),
+    "insight": (5, "insight"),
+    "intimidation": (6, "intimidation"),
+    "investigation": (4, "investigation"),
+    "medicine": (5, "medicine"),
+    "nature": (4, "nature"),
+    "perception": (5, "perception"),
+    "performance": (6, "performance"),
+    "persuasion": (6, "persuasion"),
+    "religion": (4, "religion"),
+    "sleight of hand": (2, "sleight-of-hand"),
+    "stealth": (2, "stealth"),
+    "survival": (5, "survival"),
+}
+STAT_NAMES: dict[str, int] = {
+    "strength": 1, "str": 1,
+    "dexterity": 2, "dex": 2,
+    "constitution": 3, "con": 3,
+    "intelligence": 4, "int": 4,
+    "wisdom": 5, "wis": 5,
+    "charisma": 6, "cha": 6,
+}
+STAT_ID_TO_NAME = {1: "strength", 2: "dexterity", 3: "constitution", 4: "intelligence", 5: "wisdom", 6: "charisma"}
+
+
+def fetch_character_sync(character_id: int) -> dict | str:
+    url = f"https://character-service.dndbeyond.com/character/v5/character/{character_id}"
+    req = urllib.request.Request(
+        url,
+        headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        return f"HTTP {e.code}: {e.read().decode()}"
+    except Exception as e:
+        return str(e)
+
+
+def calc_modifier(character_data: dict, check_type: str) -> int | None:
+    data = character_data.get("data") or {}
+    check_lower = re.sub(r'\s+', ' ', check_type.lower().strip())
+
+    is_save = check_lower.endswith(" save") or "saving throw" in check_lower
+    base_check = re.sub(r'\s*saving throws?\s*$|\s*save\s*$', '', check_lower).strip()
+
+    stat_id: int | None = None
+    prof_subtype: str | None = None
+
+    if base_check in SKILL_INFO:
+        stat_id, prof_subtype = SKILL_INFO[base_check]
+    elif base_check in STAT_NAMES:
+        stat_id = STAT_NAMES[base_check]
+        if is_save:
+            prof_subtype = f"{STAT_ID_TO_NAME[stat_id]}-saving-throws"
+
+    if stat_id is None:
+        return None
+
+    stats = {s["id"]: (s.get("value") or 0) for s in data.get("stats", [])}
+    bonus = {s["id"]: (s.get("value") or 0) for s in data.get("bonusStats", [])}
+    override = {s["id"]: s.get("value") for s in data.get("overrideStats", [])}
+
+    if override.get(stat_id) is not None:
+        score = override[stat_id]
+    else:
+        score = stats.get(stat_id, 10) + bonus.get(stat_id, 0)
+
+    all_mods: list[dict] = []
+    for src in ("race", "class", "background", "feat", "item"):
+        all_mods.extend(data.get("modifiers", {}).get(src, []))
+
+    stat_name = STAT_ID_TO_NAME[stat_id]
+    for m in all_mods:
+        if m.get("type") == "bonus" and m.get("subType") == f"{stat_name}-score":
+            score += m.get("fixedValue") or m.get("value") or 0
+
+    ability_mod = (score - 10) // 2
+
+    total_level = sum(c.get("level", 0) for c in data.get("classes", []))
+    prof_bonus = max(2, (max(total_level, 1) - 1) // 4 + 2)
+
+    prof_mult = 0.0
+    if prof_subtype:
+        for m in all_mods:
+            if m.get("subType") != prof_subtype:
+                continue
+            t = m.get("type", "")
+            if t == "expertise":
+                prof_mult = 2.0
+                break
+            elif t == "proficiency":
+                prof_mult = max(prof_mult, 1.0)
+            elif t == "half-proficiency":
+                prof_mult = max(prof_mult, 0.5)
+
+    return ability_mod + int(prof_bonus * prof_mult)
+
+
 def generate_image_sync(prompt: str) -> bytes | str:
     boosted = f"masterpiece, best quality, highly detailed, {prompt}"
     url = f"https://api.cloudflare.com/client/v4/accounts/{CF_ACCOUNT_ID}/ai/run/@cf/black-forest-labs/flux-1-schnell"
@@ -564,20 +670,41 @@ class RollButton(discord.ui.Button):
         self.disabled = True
         await interaction.message.edit(view=self.view)
 
+        modifier = 0
+        char_id = database.get_character_id(self.player.id)
+        if char_id:
+            char_data = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: fetch_character_sync(char_id)
+            )
+            if isinstance(char_data, dict):
+                mod = calc_modifier(char_data, self.check_type)
+                if mod is not None:
+                    modifier = mod
+
+        total = roll + modifier
+        if modifier > 0:
+            roll_text = f"1d20 ({roll}) + {modifier} = **{total}**"
+        elif modifier < 0:
+            roll_text = f"1d20 ({roll}) - {abs(modifier)} = **{total}**"
+        else:
+            roll_text = f"1d20 (**{roll}**) = **{roll}**"
+
         if roll == 20:
             flavor = "勝ったな！ガハハ！"
         elif roll == 1:
             flavor = "*Chii-sama slowly looks away.* A natural 1. I did not see that."
-        elif roll >= 15:
+        elif total >= 20:
+            flavor = "勝ったな！ガハハ！"
+        elif total >= 15:
             flavor = "Not bad. I suppose."
-        elif roll >= 10:
+        elif total >= 10:
             flavor = "...Passable."
         else:
             flavor = "Mm. Well. That happened."
 
         embed = discord.Embed(
             title=f"{interaction.user.display_name} makes a {self.check_type} check!",
-            description=f"1d20 (**{roll}**) = **{roll}**\n\n{flavor}",
+            description=f"{roll_text}\n\n{flavor}",
             color=0xFFB7C5,
         )
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
@@ -611,6 +738,49 @@ async def rollrequest(
     await interaction.response.send_message(
         f"{mentions} — the DM calls for a **{check} Check**.",
         view=view,
+    )
+
+
+@bot.tree.command(name="linkcharacter", description="Link your D&D Beyond character sheet for roll modifiers")
+@app_commands.describe(url="Your D&D Beyond character URL or character ID")
+async def linkcharacter(interaction: discord.Interaction, url: str):
+    await interaction.response.defer(ephemeral=True)
+
+    match = re.search(r'dndbeyond\.com/characters/(\d+)', url)
+    if match:
+        char_id = int(match.group(1))
+    elif url.strip().isdigit():
+        char_id = int(url.strip())
+    else:
+        await interaction.followup.send(
+            "That doesn't look like a D&D Beyond character URL or ID.", ephemeral=True
+        )
+        return
+
+    char_data = await asyncio.get_event_loop().run_in_executor(
+        None, lambda: fetch_character_sync(char_id)
+    )
+
+    if isinstance(char_data, str):
+        await interaction.followup.send(
+            f"Couldn't load that character. Make sure it's set to **public** on D&D Beyond.\n`{char_data}`",
+            ephemeral=True,
+        )
+        return
+
+    data = char_data.get("data")
+    if not data:
+        await interaction.followup.send(
+            "That character appears to be private. Set it to public on D&D Beyond and try again.",
+            ephemeral=True,
+        )
+        return
+
+    char_name = data.get("name", "Unknown")
+    database.link_character(interaction.user.id, char_id)
+    await interaction.followup.send(
+        f"Linked **{char_name}** to your account. Your rolls will now include modifiers.",
+        ephemeral=True,
     )
 
 

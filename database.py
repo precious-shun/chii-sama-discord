@@ -25,6 +25,12 @@ def init_db():
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS characters (
+            user_id INTEGER PRIMARY KEY,
+            character_id INTEGER NOT NULL
+        )
+    """)
     conn.commit()
     conn.close()
 
@@ -94,6 +100,26 @@ def claim_daily(user_id: int) -> bool:
     conn.commit()
     conn.close()
     return True
+
+
+def link_character(user_id: int, character_id: int):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute(
+        "INSERT OR REPLACE INTO characters (user_id, character_id) VALUES (?, ?)",
+        (user_id, character_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_character_id(user_id: int) -> int | None:
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT character_id FROM characters WHERE user_id = ?", (user_id,))
+    row = c.fetchone()
+    conn.close()
+    return row[0] if row else None
 
 
 def get_leaderboard() -> list:
