@@ -810,9 +810,40 @@ async def rollrequest(
     modes = [m for _, m in players_with_modes]
     labels = await asyncio.gather(*[get_label(p) for p in players])
     mentions = " ".join(p.mention for p in players)
+
+    # Build display name for each player in the sentence body
+    def sentence_name(p: discord.Member, label: str) -> str:
+        char_id = database.get_character_id(p.id)
+        return f"**{label}**" if char_id and label != p.display_name else p.mention
+
+    mode_groups: dict[str, list[str]] = {"advantage": [], "disadvantage": [], "normal": []}
+    for p, m, label in zip(players, modes, labels):
+        mode_groups[m].append(sentence_name(p, label))
+
+    def join_names(names: list[str]) -> str:
+        if len(names) == 1:
+            return names[0]
+        if len(names) == 2:
+            return f"{names[0]} and {names[1]}"
+        return ", ".join(names[:-1]) + f", and {names[-1]}"
+
+    parts = []
+    for mode, word in [("advantage", "advantage"), ("disadvantage", "disadvantage")]:
+        names = mode_groups[mode]
+        if not names:
+            continue
+        verb = "rolls" if len(names) == 1 else "roll"
+        parts.append(f"{join_names(names)} {verb} with {word}")
+    if mode_groups["normal"] and parts:
+        names = mode_groups["normal"]
+        verb = "rolls" if len(names) == 1 else "roll"
+        parts.append(f"{join_names(names)} {verb} normally")
+
+    mode_sentence = " " + "; ".join(parts) + "." if parts else ""
+
     view = RollView(players, check, list(labels), modes)
     await interaction.followup.send(
-        f"{mentions} — the DM calls for a **{check} Check**.",
+        f"{mentions} — The DM calls for a **{check} Check**.{mode_sentence}",
         view=view,
     )
 
