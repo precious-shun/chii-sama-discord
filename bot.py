@@ -1010,7 +1010,7 @@ def _build_character_summary(data: dict) -> str:
     total_level = sum(c.get("level", 0) for c in (data.get("classes") or []))
     classes = ", ".join(
         f"{(c.get('definition') or {}).get('name', '?')} {c.get('level', '?')}"
-        for c in data.get("classes", [])
+        for c in (data.get("classes") or [])
     )
     prof_bonus = max(2, (max(total_level, 1) - 1) // 4 + 2)
     background = (data.get("background") or {}).get("definition", {}) or {}
@@ -1100,7 +1100,7 @@ def _build_character_summary(data: dict) -> str:
     # Spells
     spells_by_level: dict[int, list[str]] = {}
     for spell_list in (data.get("spells") or {}).values():
-        for spell in spell_list:
+        for spell in (spell_list or []):
             s_def = spell.get("definition") or {}
             s_name = s_def.get("name")
             s_level = s_def.get("level", 0)
