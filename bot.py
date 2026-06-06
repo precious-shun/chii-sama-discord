@@ -750,42 +750,49 @@ class RollView(discord.ui.View):
             self.add_item(RollButton(player, check_type, label, mode))
 
 
+_MODE_CHOICES = [
+    app_commands.Choice(name="Normal", value="normal"),
+    app_commands.Choice(name="Advantage", value="advantage"),
+    app_commands.Choice(name="Disadvantage", value="disadvantage"),
+]
+
 @bot.tree.command(name="rollrequest", description="Request players to roll a check")
 @app_commands.describe(
     check="Type of check (e.g. Perception, Stealth)",
-    normal1="Player rolling normally",
-    normal2="Player rolling normally",
-    adv1="Player rolling with advantage",
-    adv2="Player rolling with advantage",
-    dis1="Player rolling with disadvantage",
-    dis2="Player rolling with disadvantage",
+    player1="Player 1", mode1="Roll mode for player 1",
+    player2="Player 2", mode2="Roll mode for player 2",
+    player3="Player 3", mode3="Roll mode for player 3",
+    player4="Player 4", mode4="Roll mode for player 4",
+    player5="Player 5", mode5="Roll mode for player 5",
+    player6="Player 6", mode6="Roll mode for player 6",
+)
+@app_commands.choices(
+    mode1=_MODE_CHOICES, mode2=_MODE_CHOICES, mode3=_MODE_CHOICES,
+    mode4=_MODE_CHOICES, mode5=_MODE_CHOICES, mode6=_MODE_CHOICES,
 )
 async def rollrequest(
     interaction: discord.Interaction,
     check: str,
-    normal1: discord.Member | None = None,
-    normal2: discord.Member | None = None,
-    adv1: discord.Member | None = None,
-    adv2: discord.Member | None = None,
-    dis1: discord.Member | None = None,
-    dis2: discord.Member | None = None,
+    player1: discord.Member,
+    mode1: str = "normal",
+    player2: discord.Member | None = None,
+    mode2: str = "normal",
+    player3: discord.Member | None = None,
+    mode3: str = "normal",
+    player4: discord.Member | None = None,
+    mode4: str = "normal",
+    player5: discord.Member | None = None,
+    mode5: str = "normal",
+    player6: discord.Member | None = None,
+    mode6: str = "normal",
 ):
     await interaction.response.defer()
 
-    players_with_modes: list[tuple[discord.Member, str]] = []
-    for p in [normal1, normal2]:
-        if p:
-            players_with_modes.append((p, "normal"))
-    for p in [adv1, adv2]:
-        if p:
-            players_with_modes.append((p, "advantage"))
-    for p in [dis1, dis2]:
-        if p:
-            players_with_modes.append((p, "disadvantage"))
-
-    if not players_with_modes:
-        await interaction.followup.send("Specify at least one player.", ephemeral=True)
-        return
+    entries = [
+        (player1, mode1), (player2, mode2), (player3, mode3),
+        (player4, mode4), (player5, mode5), (player6, mode6),
+    ]
+    players_with_modes = [(p, m) for p, m in entries if p is not None]
 
     async def get_label(p: discord.Member) -> str:
         char_id = database.get_character_id(p.id)
