@@ -741,9 +741,9 @@ class _PlayerModeSelect(discord.ui.Select):
         super().__init__(
             placeholder=label,
             options=[
-                discord.SelectOption(label="Normal", value="normal"),
-                discord.SelectOption(label="Advantage", value="advantage"),
-                discord.SelectOption(label="Disadvantage", value="disadvantage"),
+                discord.SelectOption(label=f"{label}: Normal", value="normal"),
+                discord.SelectOption(label=f"{label}: Advantage", value="advantage"),
+                discord.SelectOption(label=f"{label}: Disadvantage", value="disadvantage"),
             ],
             row=row,
         )
