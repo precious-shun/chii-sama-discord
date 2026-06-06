@@ -1152,6 +1152,64 @@ def _build_character_summary(data: dict) -> str:
     return "\n".join(lines)
 
 
+def _build_party_member_brief(data: dict) -> str:
+    lines = []
+    name = data.get("name", "Unknown")
+    race = (data.get("race") or {}).get("fullName") or (data.get("race") or {}).get("baseName") or ""
+    classes = []
+    for cls in (data.get("classes") or []):
+        cls_def = cls.get("definition") or {}
+        cls_name = cls_def.get("name") or ""
+        sub_def = cls.get("subclassDefinition") or {}
+        sub_name = sub_def.get("name") or ""
+        lvl = cls.get("level", 0)
+        if sub_name:
+            classes.append(f"{cls_name} ({sub_name}) {lvl}")
+        elif cls_name:
+            classes.append(f"{cls_name} {lvl}")
+    class_str = " / ".join(classes)
+    lines.append(f"Name: {name}")
+    if race:
+        lines.append(f"Race: {race}")
+    if class_str:
+        lines.append(f"Class: {class_str}")
+    base_stats = {s["id"]: s["value"] for s in (data.get("stats") or [])}
+    bonus_stats = {s["id"]: (s.get("value") or 0) for s in (data.get("bonusStats") or [])}
+    override_stats = {s["id"]: s.get("value") for s in (data.get("overrideStats") or [])}
+    stat_names = {1: "STR", 2: "DEX", 3: "CON", 4: "INT", 5: "WIS", 6: "CHA"}
+    stat_parts = []
+    for sid, label in stat_names.items():
+        if override_stats.get(sid) is not None:
+            val = override_stats[sid]
+        else:
+            val = (base_stats.get(sid) or 10) + (bonus_stats.get(sid) or 0)
+        mod = (val - 10) // 2
+        sign = "+" if mod >= 0 else ""
+        stat_parts.append(f"{label} {val} ({sign}{mod})")
+    lines.append("Stats: " + ", ".join(stat_parts))
+    hp_max = (data.get("baseHitPoints") or 0) + (data.get("bonusHitPoints") or 0)
+    lines.append(f"HP: {hp_max}")
+    all_spells = []
+    seen = set()
+    for class_spell_entry in (data.get("classSpells") or []):
+        for spell in (class_spell_entry.get("spells") or []):
+            s_def = spell.get("definition") or {}
+            s_name = s_def.get("name")
+            if s_name and s_name not in seen:
+                all_spells.append(s_name)
+                seen.add(s_name)
+    for spell_list in (data.get("spells") or {}).values():
+        for spell in (spell_list or []):
+            s_def = spell.get("definition") or {}
+            s_name = s_def.get("name")
+            if s_name and s_name not in seen:
+                all_spells.append(s_name)
+                seen.add(s_name)
+    if all_spells:
+        lines.append(f"Spells: {', '.join(all_spells[:20])}")
+    return "\n".join(lines)
+
+
 SKILL_ISSUE_SYSTEM = (
     "You are Chitose Karasuma — but right now you are functioning as a D&D tactical advisor. "
     "A player has come to you with a specific in-game situation and needs real, expert strategic guidance. "
@@ -1212,10 +1270,49 @@ async def dndskillissue(interaction: discord.Interaction, obstacle: str):
     summary = _build_character_summary(data)
     print(f"[dndskillissue] Built summary ({len(summary)} chars), calling Gemini...")
 
+    # Party member cross-character lookup
+    campaign_chars = (data.get("campaign") or {}).get("characters") or []
+    obstacle_words = set(re.findall(r"\b[a-zA-Z]{3,}\b", obstacle.lower()))
+    matched_members = []
+    for member in campaign_chars:
+        if member.get("characterId") == char_id:
+            continue
+        member_name = member.get("characterName") or ""
+        first_name = member_name.split()[0].lower() if member_name else ""
+        if len(first_name) >= 3 and first_name in obstacle_words:
+            matched_members.append(member)
+            if len(matched_members) >= 3:
+                break
+
+    party_section = ""
+    if matched_members:
+        print(f"[dndskillissue] Fetching party members: {[m.get('characterName') for m in matched_members]}")
+        fetch_tasks = [
+            asyncio.wait_for(
+                asyncio.get_event_loop().run_in_executor(None, lambda mid=m["characterId"]: fetch_character_sync(mid)),
+                timeout=10,
+            )
+            for m in matched_members
+        ]
+        results = await asyncio.gather(*fetch_tasks, return_exceptions=True)
+        briefs = []
+        for member, result in zip(matched_members, results):
+            if isinstance(result, Exception):
+                print(f"[dndskillissue] Failed to fetch {member.get('characterName')}: {result}")
+                continue
+            if isinstance(result, str):
+                continue
+            member_data = result.get("data") or {}
+            brief = _build_party_member_brief(member_data)
+            briefs.append(brief)
+        if briefs:
+            party_section = "\n\n=== PARTY MEMBERS MENTIONED ===\n" + "\n\n---\n".join(briefs)
+
     prompt = (
         f"{SKILL_ISSUE_SYSTEM}\n\n"
         f"=== CHARACTER SHEET: {char_name} ===\n{summary}\n\n"
-        f"=== SITUATION ===\n{obstacle}\n\n"
+        f"=== SITUATION ===\n{obstacle}"
+        f"{party_section}\n\n"
         "Provide your full tactical assessment."
     )
 
