@@ -732,7 +732,7 @@ class RollButton(discord.ui.Button):
         else:
             roll_text = f"{base_text} = **{roll}**"
 
-        check_label = f"Save {self.check_type[:-5].strip()}" if self.check_type.lower().endswith(" save") else f"{self.check_type} check"
+        check_label = self.check_type if self.check_type.lower().endswith(" save") else f"{self.check_type} check"
         embed = discord.Embed(
             title=f"{display_name} makes a {check_label}{mode_tag}!",
             description=roll_text,
@@ -852,7 +852,7 @@ async def rollrequest(
 
     mode_sentence = " " + "; ".join(parts) + "." if parts else ""
 
-    check_label = f"Save {check[:-5].strip()}" if check.lower().endswith(" save") else f"{check} Check"
+    check_label = check if check.lower().endswith(" save") else f"{check} Check"
     view = RollView(players, check, list(labels), modes)
     await interaction.followup.send(
         f"{mentions} — The DM calls for a **{check_label}**.{mode_sentence}",
@@ -865,7 +865,11 @@ async def rollrequest_check_autocomplete(
 ) -> list[app_commands.Choice[str]]:
     current_lower = current.lower()
     matches = [c for c in _ALL_CHECKS if current_lower in c.lower()]
-    return [app_commands.Choice(name=c, value=c) for c in matches[:25]]
+    choices = []
+    for c in matches[:25]:
+        display = f"Save {c[:-5].strip()}" if c.lower().endswith(" save") else c
+        choices.append(app_commands.Choice(name=display, value=c))
+    return choices
 
 
 @bot.tree.command(name="linkcharacter", description="Link your D&D Beyond character sheet for roll modifiers")
