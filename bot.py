@@ -753,19 +753,39 @@ class RollView(discord.ui.View):
 @bot.tree.command(name="rollrequest", description="Request players to roll a check")
 @app_commands.describe(
     check="Type of check (e.g. Perception, Stealth)",
-    player1="First player", player2="Second player",
-    player3="Third player", player4="Fourth player",
+    normal1="Player rolling normally",
+    normal2="Player rolling normally",
+    adv1="Player rolling with advantage",
+    adv2="Player rolling with advantage",
+    dis1="Player rolling with disadvantage",
+    dis2="Player rolling with disadvantage",
 )
 async def rollrequest(
     interaction: discord.Interaction,
     check: str,
-    player1: discord.Member,
-    player2: discord.Member | None = None,
-    player3: discord.Member | None = None,
-    player4: discord.Member | None = None,
+    normal1: discord.Member | None = None,
+    normal2: discord.Member | None = None,
+    adv1: discord.Member | None = None,
+    adv2: discord.Member | None = None,
+    dis1: discord.Member | None = None,
+    dis2: discord.Member | None = None,
 ):
     await interaction.response.defer()
-    players = [p for p in [player1, player2, player3, player4] if p is not None]
+
+    players_with_modes: list[tuple[discord.Member, str]] = []
+    for p in [normal1, normal2]:
+        if p:
+            players_with_modes.append((p, "normal"))
+    for p in [adv1, adv2]:
+        if p:
+            players_with_modes.append((p, "advantage"))
+    for p in [dis1, dis2]:
+        if p:
+            players_with_modes.append((p, "disadvantage"))
+
+    if not players_with_modes:
+        await interaction.followup.send("Specify at least one player.", ephemeral=True)
+        return
 
     async def get_label(p: discord.Member) -> str:
         char_id = database.get_character_id(p.id)
@@ -779,9 +799,11 @@ async def rollrequest(
                     return name
         return p.display_name
 
+    players = [p for p, _ in players_with_modes]
+    modes = [m for _, m in players_with_modes]
     labels = await asyncio.gather(*[get_label(p) for p in players])
     mentions = " ".join(p.mention for p in players)
-    view = RollView(players, check, list(labels))
+    view = RollView(players, check, list(labels), modes)
     await interaction.followup.send(
         f"{mentions} — the DM calls for a **{check} Check**.",
         view=view,
