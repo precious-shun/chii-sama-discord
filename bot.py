@@ -687,6 +687,7 @@ class RollButton(discord.ui.Button):
         self.disabled = True
         await interaction.message.edit(view=self.view)
 
+        is_homebrew = self.check_type in _ROLL_CHECKS
         modifier = 0
         avatar_url = interaction.user.display_avatar.url
         display_name = interaction.user.display_name
@@ -696,9 +697,10 @@ class RollButton(discord.ui.Button):
                 None, lambda cid=char_id: fetch_character_sync(cid)
             )
             if isinstance(char_data, dict):
-                mod = calc_modifier(char_data, self.check_type)
-                if mod is not None:
-                    modifier = mod
+                if not is_homebrew:
+                    mod = calc_modifier(char_data, self.check_type)
+                    if mod is not None:
+                        modifier = mod
                 data = char_data.get("data") or {}
                 char_name = data.get("name")
                 if char_name:
@@ -707,30 +709,33 @@ class RollButton(discord.ui.Button):
                 if char_avatar:
                     avatar_url = char_avatar
 
+        sides = 6 if is_homebrew else 20
+        nat_vals = {1, sides}
+
         def fmt_die(value: int, kept: bool) -> str:
-            bold = kept or value in (1, 20)
+            bold = kept or value in nat_vals
             inner = f"**{value}**" if bold else str(value)
             return inner if kept else f"~~{inner}~~"
 
         if self.mode == "advantage":
-            r1, r2 = random.randint(1, 20), random.randint(1, 20)
+            r1, r2 = random.randint(1, sides), random.randint(1, sides)
             roll = max(r1, r2)
             k1 = r1 >= r2
             dice_str = f"({fmt_die(r1, k1)}, {fmt_die(r2, not k1)})"
-            base_text = f"2d20kh1 {dice_str}"
+            base_text = f"2d{sides}kh1 {dice_str}"
             mode_tag = " (Advantage)"
         elif self.mode == "disadvantage":
-            r1, r2 = random.randint(1, 20), random.randint(1, 20)
+            r1, r2 = random.randint(1, sides), random.randint(1, sides)
             roll = min(r1, r2)
             k1 = r1 <= r2
             dice_str = f"({fmt_die(r1, k1)}, {fmt_die(r2, not k1)})"
-            base_text = f"2d20kl1 {dice_str}"
+            base_text = f"2d{sides}kl1 {dice_str}"
             mode_tag = " (Disadvantage)"
         else:
-            roll = random.randint(1, 20)
-            is_nat = roll in (1, 20)
+            roll = random.randint(1, sides)
+            is_nat = roll in nat_vals
             roll_disp = f"**{roll}**" if (modifier == 0 or is_nat) else str(roll)
-            base_text = f"1d20 ({roll_disp})"
+            base_text = f"1d{sides} ({roll_disp})"
             mode_tag = ""
 
         total = roll + modifier
@@ -741,9 +746,8 @@ class RollButton(discord.ui.Button):
         else:
             roll_text = f"{base_text} = **{roll}**"
 
-        check_label = self.check_type if self.check_type.lower().endswith(" save") else f"{self.check_type} check"
         embed = discord.Embed(
-            title=f"{display_name} makes a {check_label}{mode_tag}!",
+            title=f"{display_name} makes a {_check_label(self.check_type)}{mode_tag}!",
             description=roll_text,
             color=0xFFB7C5,
         )
@@ -768,7 +772,17 @@ _ALL_CHECKS = [
     "Strength", "Dexterity", "Constitution", "Intelligence", "Wisdom", "Charisma",
     "Strength Save", "Dexterity Save", "Constitution Save",
     "Intelligence Save", "Wisdom Save", "Charisma Save",
+    "Hamnigja",
 ]
+
+_ROLL_CHECKS = {"Hamnigja"}  # homebrew: uses d6, no modifiers, label is "Roll"
+
+def _check_label(check: str) -> str:
+    if check in _ROLL_CHECKS:
+        return f"{check} Roll"
+    if check.lower().endswith(" save"):
+        return check
+    return f"{check} Check"
 
 _STAT_ABBREVS = {
     "str": "strength", "dex": "dexterity", "con": "constitution",
@@ -898,7 +912,7 @@ async def rollrequest(
 
     mode_sentence = " " + "; ".join(parts) + "." if parts else ""
 
-    check_label = check if check.lower().endswith(" save") else f"{check} Check"
+    check_label = _check_label(check)
     view = RollView(players, check, list(labels), modes)
     await interaction.followup.send(
         f"{mentions} — The DM calls for a **{check_label}**.{mode_sentence}",
