@@ -1238,14 +1238,32 @@ async def dndskillissue(interaction: discord.Interaction, obstacle: str):
 
     print(f"[dndskillissue] Gemini responded ({len(text)} chars)")
     avatar_url = data.get("avatarUrl") or (data.get("decorations") or {}).get("avatarUrl") or interaction.user.display_avatar.url
-    embed = discord.Embed(
+
+    # Split into 4096-char chunks, breaking at newlines where possible
+    chunks = []
+    remaining = text
+    while remaining:
+        if len(remaining) <= 4096:
+            chunks.append(remaining)
+            break
+        split_at = remaining.rfind("\n", 0, 4096)
+        if split_at == -1:
+            split_at = 4096
+        chunks.append(remaining[:split_at])
+        remaining = remaining[split_at:].lstrip("\n")
+
+    first_embed = discord.Embed(
         title=f"Tactical Assessment — {char_name}",
-        description=text[:4096],
+        description=chunks[0],
         color=0xFFB7C5,
     )
-    embed.set_thumbnail(url=avatar_url)
-    embed.set_footer(text=f'Situation: "{obstacle[:100]}"')
-    await interaction.followup.send(embed=embed)
+    first_embed.set_thumbnail(url=avatar_url)
+    first_embed.set_footer(text=f'Situation: "{obstacle[:100]}"')
+    await interaction.followup.send(embed=first_embed)
+
+    for chunk in chunks[1:]:
+        cont_embed = discord.Embed(description=chunk, color=0xFFB7C5)
+        await interaction.followup.send(embed=cont_embed)
 
 
 
