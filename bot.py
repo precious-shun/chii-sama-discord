@@ -688,7 +688,9 @@ class RollButton(discord.ui.Button):
         await interaction.message.edit(view=self.view)
 
         is_homebrew = self.check_type in _ROLL_CHECKS
+        is_composite = self.check_type in _COMPOSITE_CHECKS
         modifier = 0
+        composite_mods: list[tuple[int, str]] = []
         avatar_url = interaction.user.display_avatar.url
         display_name = interaction.user.display_name
         char_id = database.get_character_id(self.player.id)
@@ -697,7 +699,13 @@ class RollButton(discord.ui.Button):
                 None, lambda cid=char_id: fetch_character_sync(cid)
             )
             if isinstance(char_data, dict):
-                if not is_homebrew:
+                if is_composite:
+                    for stat_key, stat_label in _COMPOSITE_CHECKS[self.check_type]:
+                        mod = calc_modifier(char_data, stat_key)
+                        if mod is not None:
+                            composite_mods.append((mod, stat_label))
+                    modifier = sum(m for m, _ in composite_mods)
+                elif not is_homebrew:
                     mod = calc_modifier(char_data, self.check_type)
                     if mod is not None:
                         modifier = mod
@@ -739,7 +747,13 @@ class RollButton(discord.ui.Button):
             mode_tag = ""
 
         total = roll + modifier
-        if modifier > 0:
+        if is_composite and composite_mods:
+            parts = " ".join(
+                f"+{m} ({l})" if m > 0 else f"{m} ({l})" if m < 0 else f"+0 ({l})"
+                for m, l in composite_mods
+            )
+            roll_text = f"{base_text} {parts} = **{total}**"
+        elif modifier > 0:
             roll_text = f"{base_text} + {modifier} = **{total}**"
         elif modifier < 0:
             roll_text = f"{base_text} - {abs(modifier)} = **{total}**"
@@ -773,9 +787,15 @@ _ALL_CHECKS = [
     "Strength Save", "Dexterity Save", "Constitution Save",
     "Intelligence Save", "Wisdom Save", "Charisma Save",
     "Hamingja",
+    "Martial", "Spiritual",
 ]
 
 _ROLL_CHECKS = {"Hamingja"}  # homebrew: uses d6, no modifiers, label is "Roll"
+
+_COMPOSITE_CHECKS: dict[str, list[tuple[str, str]]] = {
+    "Martial":   [("strength", "Str"), ("dexterity", "Dex"), ("constitution", "Con")],
+    "Spiritual": [("wisdom", "Wis"), ("charisma", "Cha"), ("intelligence", "Int")],
+}
 
 def _check_label(check: str) -> str:
     if check in _ROLL_CHECKS:
