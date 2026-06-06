@@ -730,7 +730,7 @@ class RollSetupView(discord.ui.View):
 
         labels = list(await asyncio.gather(*[get_label(p) for p in self.players]))
         config_view = RollConfigView(self.players, labels, self.check_type)
-        await interaction.message.edit(
+        await interaction.edit_original_response(
             content=f"**{self.check_type} Check** — set roll type per player:",
             view=config_view,
         )
@@ -788,7 +788,7 @@ class RollConfigView(discord.ui.View):
 
         for item in self.children:
             item.disabled = True
-        await interaction.message.edit(view=self)
+        await interaction.edit_original_response(view=self)
 
         all_mentions = " ".join(p.mention for p in players)
         msg = f"{all_mentions} — the DM calls for a **{self.check_type} Check**."
@@ -971,7 +971,7 @@ async def linkcharacter(interaction: discord.Interaction, url: str):
 @bot.tree.command(name="dmroll", description="Set up a roll request using select menus")
 async def rolltest(interaction: discord.Interaction):
     view = RollSetupView()
-    await interaction.response.send_message("**Roll Request Setup**", view=view)
+    await interaction.response.send_message("**Roll Request Setup**", view=view, ephemeral=True)
 
 
 bot.run(DISCORD_TOKEN)
