@@ -1067,19 +1067,20 @@ def _build_character_summary(data: dict) -> str:
     bonus_hp = data.get("bonusHitPoints") or 0
     lines.append(f"Max HP: {base_hp + bonus_hp}")
 
-    # Class features
+    # Class features (nested under each class entry)
     features = []
-    for feat in (data.get("classFeatures") or []):
-        feat_def = feat.get("definition") or {}
-        feat_name = feat_def.get("name")
-        if feat_name:
-            features.append(feat_name)
+    for cls in (data.get("classes") or []):
+        for feat in (cls.get("classFeatures") or []):
+            feat_def = feat.get("definition") or {}
+            feat_name = feat_def.get("name")
+            if feat_name:
+                features.append(feat_name)
     if features:
         lines.append(f"Class Features: {', '.join(features)}")
 
-    # Racial traits
+    # Racial traits (nested under race entry)
     racial_traits = []
-    for trait in (data.get("racialTraits") or []):
+    for trait in ((data.get("race") or {}).get("racialTraits") or []):
         t_def = trait.get("definition") or {}
         t_name = t_def.get("name")
         if t_name:
@@ -1097,10 +1098,18 @@ def _build_character_summary(data: dict) -> str:
     if feats:
         lines.append(f"Feats: {', '.join(feats)}")
 
-    # Spells
+    # Spells — racial/background/item/feat sources
     spells_by_level: dict[int, list[str]] = {}
     for spell_list in (data.get("spells") or {}).values():
         for spell in (spell_list or []):
+            s_def = spell.get("definition") or {}
+            s_name = s_def.get("name")
+            s_level = s_def.get("level", 0)
+            if s_name:
+                spells_by_level.setdefault(s_level, []).append(s_name)
+    # classSpells — prepared class spells (separate structure)
+    for class_spell_entry in (data.get("classSpells") or []):
+        for spell in (class_spell_entry.get("spells") or []):
             s_def = spell.get("definition") or {}
             s_name = s_def.get("name")
             s_level = s_def.get("level", 0)
