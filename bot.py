@@ -864,12 +864,12 @@ async def rollrequest_check_autocomplete(
     _interaction: discord.Interaction, current: str
 ) -> list[app_commands.Choice[str]]:
     current_lower = current.lower()
-    matches = [c for c in _ALL_CHECKS if current_lower in c.lower()]
     choices = []
-    for c in matches[:25]:
+    for c in _ALL_CHECKS:
         display = f"Save {c[:-5].strip()}" if c.lower().endswith(" save") else c
-        choices.append(app_commands.Choice(name=display, value=c))
-    return choices
+        if current_lower in display.lower() or current_lower in c.lower():
+            choices.append(app_commands.Choice(name=display, value=c))
+    return choices[:25]
 
 
 @bot.tree.command(name="linkcharacter", description="Link your D&D Beyond character sheet for roll modifiers")
