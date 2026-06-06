@@ -732,7 +732,7 @@ class RollButton(discord.ui.Button):
         else:
             roll_text = f"{base_text} = **{roll}**"
 
-        check_label = self.check_type if self.check_type.lower().endswith("save") else f"{self.check_type} check"
+        check_label = f"Save {self.check_type[:-5].strip()}" if self.check_type.lower().endswith(" save") else f"{self.check_type} check"
         embed = discord.Embed(
             title=f"{display_name} makes a {check_label}{mode_tag}!",
             description=roll_text,
@@ -852,7 +852,7 @@ async def rollrequest(
 
     mode_sentence = " " + "; ".join(parts) + "." if parts else ""
 
-    check_label = check if check.lower().endswith("save") else f"{check} Check"
+    check_label = f"Save {check[:-5].strip()}" if check.lower().endswith(" save") else f"{check} Check"
     view = RollView(players, check, list(labels), modes)
     await interaction.followup.send(
         f"{mentions} — The DM calls for a **{check_label}**.{mode_sentence}",
