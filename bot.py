@@ -995,5 +995,221 @@ async def linkcharacter(interaction: discord.Interaction, url: str):
     )
 
 
+def _build_character_summary(data: dict) -> str:
+    lines = []
+
+    # Identity
+    name = data.get("name", "Unknown")
+    race = (data.get("race") or {}).get("fullName", "Unknown Race")
+    total_level = sum(c.get("level", 0) for c in data.get("classes", []))
+    classes = ", ".join(
+        f"{(c.get('definition') or {}).get('name', '?')} {c.get('level', '?')}"
+        for c in data.get("classes", [])
+    )
+    prof_bonus = max(2, (max(total_level, 1) - 1) // 4 + 2)
+    background = (data.get("background") or {}).get("definition", {}) or {}
+    background_name = background.get("name", "")
+    lines.append(f"Name: {name}")
+    lines.append(f"Race: {race}")
+    lines.append(f"Class: {classes} (Total Level {total_level})")
+    if background_name:
+        lines.append(f"Background: {background_name}")
+    lines.append(f"Proficiency Bonus: +{prof_bonus}")
+
+    # Ability scores
+    stats = {s["id"]: (s.get("value") or 0) for s in data.get("stats", [])}
+    bonus = {s["id"]: (s.get("value") or 0) for s in data.get("bonusStats", [])}
+    override = {s["id"]: s.get("value") for s in data.get("overrideStats", [])}
+    stat_names = {1: "STR", 2: "DEX", 3: "CON", 4: "INT", 5: "WIS", 6: "CHA"}
+
+    all_mods: list[dict] = []
+    for src in ("race", "class", "background", "feat", "item"):
+        all_mods.extend(data.get("modifiers", {}).get(src, []))
+
+    score_parts = []
+    for sid, sname in stat_names.items():
+        if override.get(sid) is not None:
+            score = override[sid]
+        else:
+            score = stats.get(sid, 10) + bonus.get(sid, 0)
+        stat_key = STAT_ID_TO_NAME[sid]
+        for m in all_mods:
+            if m.get("type") == "bonus" and m.get("subType") == f"{stat_key}-score":
+                score += m.get("fixedValue") or m.get("value") or 0
+        mod = (score - 10) // 2
+        score_parts.append(f"{sname} {score} ({mod:+d})")
+    lines.append("Ability Scores: " + ", ".join(score_parts))
+
+    # Skills with proficiency
+    prof_skills = []
+    expertise_skills = []
+    for m in all_mods:
+        sub = m.get("subType", "")
+        t = m.get("type", "")
+        if t == "expertise":
+            expertise_skills.append(sub)
+        elif t == "proficiency":
+            prof_skills.append(sub)
+
+    if prof_skills:
+        lines.append(f"Skill Proficiencies: {', '.join(sorted(set(prof_skills)))}")
+    if expertise_skills:
+        lines.append(f"Expertise: {', '.join(sorted(set(expertise_skills)))}")
+
+    # HP
+    base_hp = data.get("baseHitPoints", 0)
+    bonus_hp = data.get("bonusHitPoints") or 0
+    lines.append(f"Max HP: {base_hp + bonus_hp}")
+
+    # Class features
+    features = []
+    for feat in data.get("classFeatures", []):
+        feat_def = feat.get("definition") or {}
+        feat_name = feat_def.get("name")
+        if feat_name:
+            features.append(feat_name)
+    if features:
+        lines.append(f"Class Features: {', '.join(features)}")
+
+    # Racial traits
+    racial_traits = []
+    for trait in data.get("racialTraits", []):
+        t_def = trait.get("definition") or {}
+        t_name = t_def.get("name")
+        if t_name:
+            racial_traits.append(t_name)
+    if racial_traits:
+        lines.append(f"Racial Traits: {', '.join(racial_traits)}")
+
+    # Feats
+    feats = []
+    for feat in data.get("feats", []):
+        f_def = feat.get("definition") or {}
+        f_name = f_def.get("name")
+        if f_name:
+            feats.append(f_name)
+    if feats:
+        lines.append(f"Feats: {', '.join(feats)}")
+
+    # Spells
+    spells_by_level: dict[int, list[str]] = {}
+    for spell_list in data.get("spells", {}).values():
+        for spell in spell_list:
+            s_def = spell.get("definition") or {}
+            s_name = s_def.get("name")
+            s_level = s_def.get("level", 0)
+            if s_name:
+                spells_by_level.setdefault(s_level, []).append(s_name)
+    if spells_by_level:
+        spell_lines = []
+        for lvl in sorted(spells_by_level):
+            label = "Cantrips" if lvl == 0 else f"Level {lvl}"
+            spell_lines.append(f"{label}: {', '.join(sorted(spells_by_level[lvl]))}")
+        lines.append("Spells:\n  " + "\n  ".join(spell_lines))
+
+    # Inventory
+    weapons, armor, other = [], [], []
+    for item in data.get("inventory", []):
+        i_def = item.get("definition") or {}
+        i_name = i_def.get("name")
+        i_type = (i_def.get("type") or "").lower()
+        if not i_name:
+            continue
+        if "weapon" in i_type:
+            weapons.append(i_name)
+        elif "armor" in i_type or "shield" in i_type:
+            armor.append(i_name)
+        else:
+            other.append(i_name)
+    if weapons:
+        lines.append(f"Weapons: {', '.join(weapons)}")
+    if armor:
+        lines.append(f"Armor/Shield: {', '.join(armor)}")
+    if other:
+        lines.append(f"Other Equipment: {', '.join(other)}")
+
+    # Currency
+    currency = data.get("currencies") or {}
+    currency_parts = [f"{v} {k.upper()}" for k, v in currency.items() if v]
+    if currency_parts:
+        lines.append(f"Currency: {', '.join(currency_parts)}")
+
+    return "\n".join(lines)
+
+
+SKILL_ISSUE_SYSTEM = (
+    "You are Chitose Karasuma — but right now you are functioning as a D&D tactical advisor. "
+    "A player has come to you with a specific in-game situation and needs real, expert strategic guidance. "
+    "\n\n"
+    "Your personality is still present — you are not a dry robot — but it is secondary. "
+    "The content of your response MUST be professional, specific, and thorough. "
+    "This is not the time for deflection, vagueness, or one-liners. "
+    "\n\n"
+    "Rules for this response:\n"
+    "- Read the character sheet carefully. Base your advice entirely on what this character can actually do.\n"
+    "- Reference specific abilities, spells, class features, stats, proficiencies, and equipment by name.\n"
+    "- Prioritize the strongest options available. Explain WHY each suggestion works for this situation.\n"
+    "- If there are multiple viable approaches, lay them out clearly — primary strategy first, alternatives after.\n"
+    "- Account for the character's weaknesses, not just strengths. Flag risks if relevant.\n"
+    "- Do NOT give generic D&D advice that could apply to any character. Everything must be grounded in this specific sheet.\n"
+    "- You may let Chitose's voice come through in phrasing, but the substance must read like it came from someone who actually knows what they are doing.\n"
+)
+
+
+@bot.tree.command(name="dndskillissue", description="Get tactical advice from Chii-sama based on your character sheet")
+@app_commands.describe(obstacle="Describe the situation or obstacle you're facing in the session")
+async def dndskillissue(interaction: discord.Interaction, obstacle: str):
+    await interaction.response.defer()
+
+    char_id = database.get_character_id(interaction.user.id)
+    if not char_id:
+        await interaction.followup.send(
+            "You haven't linked a character. Use `/linkcharacter` or `?beyond <url>` first.",
+            ephemeral=True,
+        )
+        return
+
+    char_data = await asyncio.get_event_loop().run_in_executor(
+        None, lambda: fetch_character_sync(char_id)
+    )
+    if isinstance(char_data, str):
+        await interaction.followup.send(
+            f"Couldn't load your character sheet: `{char_data}`",
+            ephemeral=True,
+        )
+        return
+
+    data = char_data.get("data") or {}
+    char_name = data.get("name", interaction.user.display_name)
+    summary = _build_character_summary(data)
+
+    prompt = (
+        f"{SKILL_ISSUE_SYSTEM}\n\n"
+        f"=== CHARACTER SHEET: {char_name} ===\n{summary}\n\n"
+        f"=== SITUATION ===\n{obstacle}\n\n"
+        "Provide your full tactical assessment."
+    )
+
+    try:
+        text = await generate(prompt)
+    except Exception as e:
+        await interaction.followup.send(
+            "Chii-sama is unavailable right now. Try again in a moment.",
+            ephemeral=True,
+        )
+        print(f"[dndskillissue ERROR] {e}")
+        return
+
+    avatar_url = data.get("avatarUrl") or (data.get("decorations") or {}).get("avatarUrl") or interaction.user.display_avatar.url
+    embed = discord.Embed(
+        title=f"Tactical Assessment — {char_name}",
+        description=text[:4096],
+        color=0xFFB7C5,
+    )
+    embed.set_thumbnail(url=avatar_url)
+    embed.set_footer(text=f'Situation: "{obstacle[:100]}"')
+    await interaction.followup.send(embed=embed)
+
+
 
 bot.run(DISCORD_TOKEN)
