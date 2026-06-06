@@ -707,21 +707,30 @@ class RollButton(discord.ui.Button):
                 if char_avatar:
                     avatar_url = char_avatar
 
+        def fmt_die(value: int, kept: bool) -> str:
+            bold = kept or value in (1, 20)
+            inner = f"**{value}**" if bold else str(value)
+            return inner if kept else f"~~{inner}~~"
+
         if self.mode == "advantage":
             r1, r2 = random.randint(1, 20), random.randint(1, 20)
             roll = max(r1, r2)
-            dice_str = f"(**{r1}**, ~~{r2}~~)" if r1 >= r2 else f"(~~{r1}~~, **{r2}**)"
+            k1 = r1 >= r2
+            dice_str = f"({fmt_die(r1, k1)}, {fmt_die(r2, not k1)})"
             base_text = f"2d20kh1 {dice_str}"
             mode_tag = " (Advantage)"
         elif self.mode == "disadvantage":
             r1, r2 = random.randint(1, 20), random.randint(1, 20)
             roll = min(r1, r2)
-            dice_str = f"(**{r1}**, ~~{r2}~~)" if r1 <= r2 else f"(~~{r1}~~, **{r2}**)"
+            k1 = r1 <= r2
+            dice_str = f"({fmt_die(r1, k1)}, {fmt_die(r2, not k1)})"
             base_text = f"2d20kl1 {dice_str}"
             mode_tag = " (Disadvantage)"
         else:
             roll = random.randint(1, 20)
-            base_text = f"1d20 ({roll})" if modifier != 0 else f"1d20 (**{roll}**)"
+            is_nat = roll in (1, 20)
+            roll_disp = f"**{roll}**" if (modifier == 0 or is_nat) else str(roll)
+            base_text = f"1d20 ({roll_disp})"
             mode_tag = ""
 
         total = roll + modifier
