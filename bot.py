@@ -750,6 +750,16 @@ class RollView(discord.ui.View):
             self.add_item(RollButton(player, check_type, label, mode))
 
 
+_ALL_CHECKS = [
+    "Acrobatics", "Animal Handling", "Arcana", "Athletics", "Deception",
+    "History", "Insight", "Intimidation", "Investigation", "Medicine",
+    "Nature", "Perception", "Performance", "Persuasion", "Religion",
+    "Sleight of Hand", "Stealth", "Survival",
+    "Strength", "Dexterity", "Constitution", "Intelligence", "Wisdom", "Charisma",
+    "Strength Save", "Dexterity Save", "Constitution Save",
+    "Intelligence Save", "Wisdom Save", "Charisma Save",
+]
+
 _MODE_CHOICES = [
     app_commands.Choice(name="Normal", value="normal"),
     app_commands.Choice(name="Advantage", value="advantage"),
@@ -846,6 +856,14 @@ async def rollrequest(
         f"{mentions} — The DM calls for a **{check} Check**.{mode_sentence}",
         view=view,
     )
+
+@rollrequest.autocomplete("check")
+async def rollrequest_check_autocomplete(
+    _interaction: discord.Interaction, current: str
+) -> list[app_commands.Choice[str]]:
+    current_lower = current.lower()
+    matches = [c for c in _ALL_CHECKS if current_lower in c.lower()]
+    return [app_commands.Choice(name=c, value=c) for c in matches[:25]]
 
 
 @bot.tree.command(name="linkcharacter", description="Link your D&D Beyond character sheet for roll modifiers")
