@@ -886,10 +886,6 @@ async def rollrequest(
             continue
         verb = "rolls" if len(names) == 1 else "roll"
         parts.append(f"{join_names(names)} {verb} with {word}")
-    if mode_groups["normal"] and parts:
-        names = mode_groups["normal"]
-        verb = "rolls" if len(names) == 1 else "roll"
-        parts.append(f"{join_names(names)} {verb} normally")
 
     mode_sentence = " " + "; ".join(parts) + "." if parts else ""
 
