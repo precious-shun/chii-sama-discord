@@ -187,13 +187,19 @@ def get_model() -> genai.GenerativeModel:
     genai.configure(api_key=GEMINI_KEYS[_key_index])
     return genai.GenerativeModel(GEMINI_MODELS[_model_index])
 
-async def generate(prompt: str) -> str:
+async def generate(prompt: str, timeout: int = 30) -> str:
     global _key_index, _model_index
     total_attempts = len(GEMINI_KEYS) * len(GEMINI_MODELS)
     for _ in range(total_attempts):
         try:
             m = get_model()
-            response = await asyncio.get_event_loop().run_in_executor(None, lambda: m.generate_content(prompt))
+            response = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: m.generate_content(
+                    prompt,
+                    request_options={"timeout": timeout},
+                ),
+            )
             return response.text
         except Exception as e:
             if "429" in str(e) or "quota" in str(e).lower():
@@ -1191,7 +1197,13 @@ async def dndskillissue(interaction: discord.Interaction, obstacle: str):
     )
 
     try:
-        text = await generate(prompt)
+        text = await asyncio.wait_for(generate(prompt, timeout=90), timeout=100)
+    except asyncio.TimeoutError:
+        await interaction.followup.send(
+            "Took too long to get a response from Gemini. Try again — or simplify the situation description.",
+            ephemeral=True,
+        )
+        return
     except Exception as e:
         await interaction.followup.send(
             "Chii-sama is unavailable right now. Try again in a moment.",
