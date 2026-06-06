@@ -971,8 +971,7 @@ async def linkcharacter(interaction: discord.Interaction, url: str):
 @bot.tree.command(name="dmroll", description="Set up a roll request using select menus")
 async def rolltest(interaction: discord.Interaction):
     view = RollSetupView()
-    await interaction.response.defer(ephemeral=True, thinking=False)
-    await interaction.channel.send("**Roll Request Setup**", view=view)
+    await interaction.response.send_message("**Roll Request Setup**", view=view)
 
 
 bot.run(DISCORD_TOKEN)
