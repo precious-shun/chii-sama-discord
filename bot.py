@@ -1166,6 +1166,7 @@ SKILL_ISSUE_SYSTEM = (
 @app_commands.describe(obstacle="Describe the situation or obstacle you're facing in the session")
 async def dndskillissue(interaction: discord.Interaction, obstacle: str):
     await interaction.response.defer()
+    print(f"[dndskillissue] START user={interaction.user.id} obstacle={obstacle[:60]!r}")
 
     char_id = database.get_character_id(interaction.user.id)
     if not char_id:
@@ -1175,9 +1176,21 @@ async def dndskillissue(interaction: discord.Interaction, obstacle: str):
         )
         return
 
-    char_data = await asyncio.get_event_loop().run_in_executor(
-        None, lambda: fetch_character_sync(char_id)
-    )
+    print(f"[dndskillissue] Fetching D&D Beyond character {char_id}...")
+    try:
+        char_data = await asyncio.wait_for(
+            asyncio.get_event_loop().run_in_executor(None, lambda: fetch_character_sync(char_id)),
+            timeout=15,
+        )
+    except asyncio.TimeoutError:
+        print(f"[dndskillissue] D&D Beyond fetch timed out for char {char_id}")
+        await interaction.followup.send(
+            "Couldn't load your character sheet — D&D Beyond took too long. Try again in a moment.",
+            ephemeral=True,
+        )
+        return
+
+    print(f"[dndskillissue] Fetch done, got: {type(char_data).__name__}")
     if isinstance(char_data, str):
         await interaction.followup.send(
             f"Couldn't load your character sheet: `{char_data}`",
@@ -1188,6 +1201,7 @@ async def dndskillissue(interaction: discord.Interaction, obstacle: str):
     data = char_data.get("data") or {}
     char_name = data.get("name", interaction.user.display_name)
     summary = _build_character_summary(data)
+    print(f"[dndskillissue] Built summary ({len(summary)} chars), calling Gemini...")
 
     prompt = (
         f"{SKILL_ISSUE_SYSTEM}\n\n"
@@ -1199,19 +1213,21 @@ async def dndskillissue(interaction: discord.Interaction, obstacle: str):
     try:
         text = await asyncio.wait_for(generate(prompt, timeout=90), timeout=100)
     except asyncio.TimeoutError:
+        print(f"[dndskillissue] Gemini timed out")
         await interaction.followup.send(
             "Took too long to get a response from Gemini. Try again — or simplify the situation description.",
             ephemeral=True,
         )
         return
     except Exception as e:
+        print(f"[dndskillissue ERROR] {type(e).__name__}: {e}")
         await interaction.followup.send(
             "Chii-sama is unavailable right now. Try again in a moment.",
             ephemeral=True,
         )
-        print(f"[dndskillissue ERROR] {e}")
         return
 
+    print(f"[dndskillissue] Gemini responded ({len(text)} chars)")
     avatar_url = data.get("avatarUrl") or (data.get("decorations") or {}).get("avatarUrl") or interaction.user.display_avatar.url
     embed = discord.Embed(
         title=f"Tactical Assessment — {char_name}",
