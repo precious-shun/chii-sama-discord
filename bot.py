@@ -770,7 +770,7 @@ class RollConfigView(discord.ui.View):
     async def roll(self, interaction: discord.Interaction, _button: discord.ui.Button):
         await interaction.response.defer()
 
-        async def get_label(sel: _PlayerModeSelect) -> str:
+        async def get_label(sel: _PlayerModeSelect) -> tuple[str, bool]:
             char_id = database.get_character_id(sel.player.id)
             if char_id:
                 char_data = await asyncio.get_event_loop().run_in_executor(
@@ -779,10 +779,12 @@ class RollConfigView(discord.ui.View):
                 if isinstance(char_data, dict):
                     name = (char_data.get("data") or {}).get("name")
                     if name:
-                        return name
-            return sel.player.display_name
+                        return name, True
+            return sel.player.display_name, False
 
-        labels = list(await asyncio.gather(*[get_label(sel) for sel in self.player_selects]))
+        results = list(await asyncio.gather(*[get_label(sel) for sel in self.player_selects]))
+        labels = [r[0] for r in results]
+        linked = [r[1] for r in results]
         players = [sel.player for sel in self.player_selects]
         modes = [sel.mode for sel in self.player_selects]
 
@@ -792,8 +794,10 @@ class RollConfigView(discord.ui.View):
 
         all_mentions = " ".join(p.mention for p in players)
         msg = f"{all_mentions} — the DM calls for a **{self.check_type} Check**."
-        adv = [sel.player.mention for sel in self.player_selects if sel.mode == "advantage"]
-        dis = [sel.player.mention for sel in self.player_selects if sel.mode == "disadvantage"]
+        adv = [f"**{lbl}**" if ok else sel.player.mention
+               for sel, lbl, ok in zip(self.player_selects, labels, linked) if sel.mode == "advantage"]
+        dis = [f"**{lbl}**" if ok else sel.player.mention
+               for sel, lbl, ok in zip(self.player_selects, labels, linked) if sel.mode == "disadvantage"]
         if adv:
             msg += f" {' '.join(adv)} roll with **Advantage**."
         if dis:
