@@ -761,6 +761,46 @@ _ALL_CHECKS = [
     "Intelligence Save", "Wisdom Save", "Charisma Save",
 ]
 
+_STAT_ABBREVS = {
+    "str": "strength", "dex": "dexterity", "con": "constitution",
+    "int": "intelligence", "wis": "wisdom", "cha": "charisma",
+}
+
+def _normalize_check_input(raw: str) -> str:
+    tokens = raw.lower().strip().split()
+    expanded = [_STAT_ABBREVS.get(t, t) for t in tokens]
+    joined = " ".join(expanded)
+    if joined.startswith("save "):
+        joined = joined[5:].strip() + " save"
+    return joined
+
+def _ranked_check_matches(normalized: str) -> list[str]:
+    tiers: list[list[str]] = [[], [], [], []]
+    for c in _ALL_CHECKS:
+        cl = c.lower()
+        words = cl.split()
+        if cl.startswith(normalized):
+            tiers[0].append(c)
+        elif words[0].startswith(normalized):
+            tiers[1].append(c)
+        elif any(w.startswith(normalized) for w in words):
+            tiers[2].append(c)
+        elif normalized in cl:
+            tiers[3].append(c)
+    result = []
+    for tier in tiers:
+        result.extend(sorted(tier))
+    return result
+
+def resolve_check(raw: str) -> str:
+    normalized = _normalize_check_input(raw)
+    lookup = {c.lower(): c for c in _ALL_CHECKS}
+    if normalized in lookup:
+        return lookup[normalized]
+    matches = _ranked_check_matches(normalized)
+    return matches[0] if matches else raw.strip()
+
+
 _MODE_CHOICES = [
     app_commands.Choice(name="Normal", value="normal"),
     app_commands.Choice(name="Advantage", value="advantage"),
@@ -798,6 +838,7 @@ async def rollrequest(
     mode6: str = "normal",
 ):
     await interaction.response.defer()
+    check = resolve_check(check)
 
     entries = [
         (player1, mode1), (player2, mode2), (player3, mode3),
@@ -863,13 +904,13 @@ async def rollrequest(
 async def rollrequest_check_autocomplete(
     _interaction: discord.Interaction, current: str
 ) -> list[app_commands.Choice[str]]:
-    current_lower = current.lower()
+    normalized = _normalize_check_input(current)
+    matches = _ranked_check_matches(normalized) if normalized else list(_ALL_CHECKS)
     choices = []
-    for c in _ALL_CHECKS:
+    for c in matches[:25]:
         display = f"Save {c[:-5].strip()}" if c.lower().endswith(" save") else c
-        if current_lower in display.lower() or current_lower in c.lower():
-            choices.append(app_commands.Choice(name=display, value=c))
-    return choices[:25]
+        choices.append(app_commands.Choice(name=display, value=c))
+    return choices
 
 
 @bot.tree.command(name="linkcharacter", description="Link your D&D Beyond character sheet for roll modifiers")
