@@ -119,9 +119,9 @@ def calc_modifier(character_data: dict, check_type: str) -> int | None:
     if stat_id is None:
         return None
 
-    stats = {s["id"]: (s.get("value") or 0) for s in data.get("stats", [])}
-    bonus = {s["id"]: (s.get("value") or 0) for s in data.get("bonusStats", [])}
-    override = {s["id"]: s.get("value") for s in data.get("overrideStats", [])}
+    stats = {s["id"]: (s.get("value") or 0) for s in (data.get("stats") or [])}
+    bonus = {s["id"]: (s.get("value") or 0) for s in (data.get("bonusStats") or [])}
+    override = {s["id"]: s.get("value") for s in (data.get("overrideStats") or [])}
 
     if override.get(stat_id) is not None:
         score = override[stat_id]
@@ -130,7 +130,7 @@ def calc_modifier(character_data: dict, check_type: str) -> int | None:
 
     all_mods: list[dict] = []
     for src in ("race", "class", "background", "feat", "item"):
-        all_mods.extend(data.get("modifiers", {}).get(src, []))
+        all_mods.extend((data.get("modifiers") or {}).get(src) or [])
 
     stat_name = STAT_ID_TO_NAME[stat_id]
     for m in all_mods:
@@ -139,7 +139,7 @@ def calc_modifier(character_data: dict, check_type: str) -> int | None:
 
     ability_mod = (score - 10) // 2
 
-    total_level = sum(c.get("level", 0) for c in data.get("classes", []))
+    total_level = sum(c.get("level", 0) for c in (data.get("classes") or []))
     prof_bonus = max(2, (max(total_level, 1) - 1) // 4 + 2)
 
     prof_mult = 0.0
@@ -1007,7 +1007,7 @@ def _build_character_summary(data: dict) -> str:
     # Identity
     name = data.get("name", "Unknown")
     race = (data.get("race") or {}).get("fullName", "Unknown Race")
-    total_level = sum(c.get("level", 0) for c in data.get("classes", []))
+    total_level = sum(c.get("level", 0) for c in (data.get("classes") or []))
     classes = ", ".join(
         f"{(c.get('definition') or {}).get('name', '?')} {c.get('level', '?')}"
         for c in data.get("classes", [])
@@ -1023,14 +1023,14 @@ def _build_character_summary(data: dict) -> str:
     lines.append(f"Proficiency Bonus: +{prof_bonus}")
 
     # Ability scores
-    stats = {s["id"]: (s.get("value") or 0) for s in data.get("stats", [])}
-    bonus = {s["id"]: (s.get("value") or 0) for s in data.get("bonusStats", [])}
-    override = {s["id"]: s.get("value") for s in data.get("overrideStats", [])}
+    stats = {s["id"]: (s.get("value") or 0) for s in (data.get("stats") or [])}
+    bonus = {s["id"]: (s.get("value") or 0) for s in (data.get("bonusStats") or [])}
+    override = {s["id"]: s.get("value") for s in (data.get("overrideStats") or [])}
     stat_names = {1: "STR", 2: "DEX", 3: "CON", 4: "INT", 5: "WIS", 6: "CHA"}
 
     all_mods: list[dict] = []
     for src in ("race", "class", "background", "feat", "item"):
-        all_mods.extend(data.get("modifiers", {}).get(src, []))
+        all_mods.extend((data.get("modifiers") or {}).get(src) or [])
 
     score_parts = []
     for sid, sname in stat_names.items():
@@ -1069,7 +1069,7 @@ def _build_character_summary(data: dict) -> str:
 
     # Class features
     features = []
-    for feat in data.get("classFeatures", []):
+    for feat in (data.get("classFeatures") or []):
         feat_def = feat.get("definition") or {}
         feat_name = feat_def.get("name")
         if feat_name:
@@ -1079,7 +1079,7 @@ def _build_character_summary(data: dict) -> str:
 
     # Racial traits
     racial_traits = []
-    for trait in data.get("racialTraits", []):
+    for trait in (data.get("racialTraits") or []):
         t_def = trait.get("definition") or {}
         t_name = t_def.get("name")
         if t_name:
@@ -1089,7 +1089,7 @@ def _build_character_summary(data: dict) -> str:
 
     # Feats
     feats = []
-    for feat in data.get("feats", []):
+    for feat in (data.get("feats") or []):
         f_def = feat.get("definition") or {}
         f_name = f_def.get("name")
         if f_name:
@@ -1099,7 +1099,7 @@ def _build_character_summary(data: dict) -> str:
 
     # Spells
     spells_by_level: dict[int, list[str]] = {}
-    for spell_list in data.get("spells", {}).values():
+    for spell_list in (data.get("spells") or {}).values():
         for spell in spell_list:
             s_def = spell.get("definition") or {}
             s_name = s_def.get("name")
@@ -1115,7 +1115,7 @@ def _build_character_summary(data: dict) -> str:
 
     # Inventory
     weapons, armor, other = [], [], []
-    for item in data.get("inventory", []):
+    for item in (data.get("inventory") or []):
         i_def = item.get("definition") or {}
         i_name = i_def.get("name")
         i_type = (i_def.get("type") or "").lower()
