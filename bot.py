@@ -666,15 +666,6 @@ async def draw(interaction: discord.Interaction, prompt: str):
         await interaction.followup.send(f"[debug] {image_bytes}")
 
 
-CHECK_OPTIONS = [
-    "Acrobatics", "Animal Handling", "Arcana", "Athletics", "Deception",
-    "History", "Insight", "Intimidation", "Investigation", "Medicine",
-    "Nature", "Perception", "Performance", "Persuasion", "Religion",
-    "Sleight of Hand", "Stealth", "Survival",
-    "Strength", "Dexterity", "Constitution", "Intelligence", "Wisdom", "Charisma",
-]
-
-
 class _PlayerSelect(discord.ui.UserSelect):
     def __init__(self):
         super().__init__(placeholder="Select players (1–4)...", min_values=1, max_values=4, row=0)
@@ -684,36 +675,21 @@ class _PlayerSelect(discord.ui.UserSelect):
         await interaction.response.defer()
 
 
-class _CheckSelect(discord.ui.Select):
-    def __init__(self):
-        super().__init__(
-            placeholder="Select check type...",
-            options=[discord.SelectOption(label=c) for c in CHECK_OPTIONS],
-            row=1,
-        )
+class CheckTypeModal(discord.ui.Modal, title="Roll Request"):
+    check = discord.ui.TextInput(
+        label="Check Type",
+        placeholder="e.g. Perception, Stealth, Intimidation...",
+        min_length=2,
+        max_length=50,
+    )
 
-    async def callback(self, interaction: discord.Interaction):
-        self.view.check_type = self.values[0]
-        await interaction.response.defer()
+    def __init__(self, players: list[discord.Member], original_interaction: discord.Interaction):
+        super().__init__()
+        self.players = players
+        self.original_interaction = original_interaction
 
-
-class RollSetupView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=120)
-        self.players: list[discord.Member] = []
-        self.check_type: str | None = None
-        self.add_item(_PlayerSelect())
-        self.add_item(_CheckSelect())
-
-    @discord.ui.button(label="Next →", style=discord.ButtonStyle.primary, row=2)
-    async def next_step(self, interaction: discord.Interaction, _button: discord.ui.Button):
-        if not self.players:
-            await interaction.response.send_message("Select at least one player first.", ephemeral=True)
-            return
-        if not self.check_type:
-            await interaction.response.send_message("Select a check type first.", ephemeral=True)
-            return
-
+    async def on_submit(self, interaction: discord.Interaction):
+        check_type = self.check.value.strip().title()
         await interaction.response.defer()
 
         async def get_label(p: discord.Member) -> str:
@@ -729,11 +705,27 @@ class RollSetupView(discord.ui.View):
             return p.display_name
 
         labels = list(await asyncio.gather(*[get_label(p) for p in self.players]))
-        config_view = RollConfigView(self.players, labels, self.check_type)
-        await interaction.edit_original_response(
-            content=f"**{self.check_type} Check** — set roll type per player:",
+        config_view = RollConfigView(self.players, labels, check_type)
+        await self.original_interaction.edit_original_response(
+            content=f"**{check_type} Check** — set roll type per player:",
             view=config_view,
         )
+
+
+class RollSetupView(discord.ui.View):
+    def __init__(self, original_interaction: discord.Interaction):
+        super().__init__(timeout=120)
+        self.players: list[discord.Member] = []
+        self.original_interaction = original_interaction
+        self.add_item(_PlayerSelect())
+
+    @discord.ui.button(label="Next →", style=discord.ButtonStyle.primary, row=1)
+    async def next_step(self, interaction: discord.Interaction, _button: discord.ui.Button):
+        if not self.players:
+            await interaction.response.send_message("Select at least one player first.", ephemeral=True)
+            return
+        modal = CheckTypeModal(self.players, self.original_interaction)
+        await interaction.response.send_modal(modal)
 
 
 class _PlayerModeSelect(discord.ui.Select):
@@ -790,7 +782,7 @@ class RollConfigView(discord.ui.View):
 
         for item in self.children:
             item.disabled = True
-        await interaction.edit_original_response(view=self)
+        await interaction.message.edit(view=self)
 
         all_mentions = " ".join(p.mention for p in players)
         msg = f"{all_mentions} — the DM calls for a **{self.check_type} Check**."
@@ -974,7 +966,7 @@ async def linkcharacter(interaction: discord.Interaction, url: str):
 
 @bot.tree.command(name="dmroll", description="Set up a roll request using select menus")
 async def rolltest(interaction: discord.Interaction):
-    view = RollSetupView()
+    view = RollSetupView(interaction)
     await interaction.response.send_message("**Roll Request Setup**", view=view, ephemeral=True)
 
 
