@@ -772,10 +772,10 @@ _ALL_CHECKS = [
     "Strength", "Dexterity", "Constitution", "Intelligence", "Wisdom", "Charisma",
     "Strength Save", "Dexterity Save", "Constitution Save",
     "Intelligence Save", "Wisdom Save", "Charisma Save",
-    "Hamnigja",
+    "Hamingja",
 ]
 
-_ROLL_CHECKS = {"Hamnigja"}  # homebrew: uses d6, no modifiers, label is "Roll"
+_ROLL_CHECKS = {"Hamingja"}  # homebrew: uses d6, no modifiers, label is "Roll"
 
 def _check_label(check: str) -> str:
     if check in _ROLL_CHECKS:
