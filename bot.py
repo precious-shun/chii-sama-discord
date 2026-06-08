@@ -1349,6 +1349,9 @@ async def dndskillissue(interaction: discord.Interaction, obstacle: str):
         chunks.append(remaining[:split_at])
         remaining = remaining[split_at:].lstrip("\n")
 
+    await interaction.edit_original_response(content=f"Assessment complete — **{char_name}**.")
+    original_msg = await interaction.original_response()
+
     first_embed = discord.Embed(
         title=f"Tactical Assessment — {char_name}",
         description=chunks[0],
@@ -1356,11 +1359,11 @@ async def dndskillissue(interaction: discord.Interaction, obstacle: str):
     )
     first_embed.set_thumbnail(url=avatar_url)
     first_embed.set_footer(text=f'Situation: "{obstacle[:100]}"')
-    await interaction.followup.send(embed=first_embed)
+    await interaction.channel.send(embed=first_embed, reference=original_msg, mention_author=False)
 
     for chunk in chunks[1:]:
         cont_embed = discord.Embed(description=chunk, color=0xFFB7C5)
-        await interaction.followup.send(embed=cont_embed)
+        await interaction.channel.send(embed=cont_embed)
 
 
 
