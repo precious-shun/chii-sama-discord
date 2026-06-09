@@ -16,10 +16,9 @@ YTDL_OPTIONS = {
     'no_warnings': True,
     'default_search': 'ytsearch',
     'source_address': '0.0.0.0',
-    'cookiefile': '/opt/chii-sama/cookies.txt',
     'extractor_args': {
         'youtube': {
-            'js_runtimes': ['deno:/home/chiisama/.deno/bin/deno'],
+            'player_client': ['tv_embedded', 'ios'],
         }
     },
 }
