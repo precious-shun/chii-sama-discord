@@ -94,14 +94,18 @@ class Music(commands.Cog):
         elif player.voice_client.channel != interaction.user.voice.channel:
             await player.voice_client.move_to(interaction.user.voice.channel)
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         try:
             ytdl = yt_dlp.YoutubeDL(YTDL_OPTIONS)
-            data = await loop.run_in_executor(
-                None, lambda: ytdl.extract_info(query, download=False)
+            data = await asyncio.wait_for(
+                loop.run_in_executor(None, lambda: ytdl.extract_info(query, download=False)),
+                timeout=30,
             )
             if 'entries' in data:
                 data = data['entries'][0]
+        except asyncio.TimeoutError:
+            await interaction.followup.send("*Chii-sama got tired of waiting.* YouTube took too long — try again.")
+            return
         except Exception as e:
             print(f"[Music ERROR] {e}")
             await interaction.followup.send(
