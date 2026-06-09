@@ -145,6 +145,18 @@ class Music(commands.Cog):
                 f"Added to queue (#{len(player.queue)}): **{song.title}**"
             )
 
+    @app_commands.command(name="leave", description="Chii-sama leaves the voice channel")
+    async def leave(self, interaction: discord.Interaction):
+        player = get_player(interaction.guild_id)
+        if not player.voice_client or not player.voice_client.is_connected():
+            await interaction.response.send_message("I'm not even in a voice channel.")
+            return
+        player.queue.clear()
+        player.current = None
+        await player.voice_client.disconnect()
+        player.voice_client = None
+        await interaction.response.send_message("*Chii-sama has left. You're welcome.*")
+
     @app_commands.command(name="skip", description="Skip the current song")
     async def skip(self, interaction: discord.Interaction):
         player = get_player(interaction.guild_id)
