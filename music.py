@@ -10,7 +10,7 @@ from discord import app_commands
 from discord.ext import commands
 
 YTDL_OPTIONS = {
-    'format': 'bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio/best',
+    'format': 'bestaudio/best[height<=480]/best',
     'noplaylist': True,
     'quiet': True,
     'no_warnings': True,
