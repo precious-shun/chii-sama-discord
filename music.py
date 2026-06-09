@@ -89,10 +89,12 @@ class Music(commands.Cog):
             return
 
         player = get_player(interaction.guild_id)
+        print(f"[Music] Connecting to voice for guild {interaction.guild_id}...")
         if not player.voice_client or not player.voice_client.is_connected():
             player.voice_client = await interaction.user.voice.channel.connect()
         elif player.voice_client.channel != interaction.user.voice.channel:
             await player.voice_client.move_to(interaction.user.voice.channel)
+        print(f"[Music] Voice connected. Fetching: {query!r}")
 
         loop = asyncio.get_running_loop()
         try:
@@ -103,11 +105,13 @@ class Music(commands.Cog):
             )
             if 'entries' in data:
                 data = data['entries'][0]
+            print(f"[Music] Fetched: {data.get('title')!r}")
         except asyncio.TimeoutError:
+            print(f"[Music] yt_dlp timed out for query: {query!r}")
             await interaction.followup.send("*Chii-sama got tired of waiting.* YouTube took too long — try again.")
             return
         except Exception as e:
-            print(f"[Music ERROR] {e}")
+            print(f"[Music ERROR] {type(e).__name__}: {e}")
             await interaction.followup.send(
                 "*Chii-sama couldn't find that.* Try a different search or URL."
             )

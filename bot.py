@@ -367,6 +367,9 @@ async def on_ready():
         guild = discord.Object(id=GUILD_ID)
         bot.tree.copy_global_to(guild=guild)
         await bot.tree.sync(guild=guild)
+        # clear any leftover global commands so they don't show up as duplicates
+        bot.tree.clear_commands(guild=None)
+        await bot.tree.sync()
     else:
         await bot.tree.sync()
     print(f"Chii-sama has arrived! Logged in as {bot.user}")
