@@ -82,10 +82,17 @@ class Music(commands.Cog):
     @app_commands.command(name="play", description="Play a song from YouTube, YouTube Music, or SoundCloud")
     @app_commands.describe(query="Song name or paste a URL")
     async def play(self, interaction: discord.Interaction, query: str):
-        if not await self._ensure_voice(interaction):
+        await interaction.response.defer()
+
+        if not interaction.user.voice:
+            await interaction.followup.send("You need to be in a voice channel first, peasant.")
             return
 
-        await interaction.response.defer()
+        player = get_player(interaction.guild_id)
+        if not player.voice_client or not player.voice_client.is_connected():
+            player.voice_client = await interaction.user.voice.channel.connect()
+        elif player.voice_client.channel != interaction.user.voice.channel:
+            await player.voice_client.move_to(interaction.user.voice.channel)
 
         loop = asyncio.get_event_loop()
         try:
