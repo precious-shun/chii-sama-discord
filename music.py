@@ -145,35 +145,42 @@ class Music(commands.Cog):
                 f"Added to queue (#{len(player.queue)}): **{song.title}**"
             )
 
-    @app_commands.command(name="leave", description="Chii-sama leaves the voice channel")
-    async def leave(self, interaction: discord.Interaction):
-        player = get_player(interaction.guild_id)
-        if not player.voice_client or not player.voice_client.is_connected():
-            await interaction.response.send_message("I'm not even in a voice channel.")
-            return
+    def _get_voice_client(self, guild_id: int) -> discord.VoiceClient | None:
+        for vc in self.bot.voice_clients:
+            if vc.guild.id == guild_id:
+                return vc
+        return None
+
+    async def _disconnect(self, guild_id: int):
+        player = get_player(guild_id)
         player.queue.clear()
         player.current = None
-        await player.voice_client.disconnect()
+        vc = self._get_voice_client(guild_id)
+        if vc:
+            await vc.disconnect()
         player.voice_client = None
+
+    @app_commands.command(name="leave", description="Chii-sama leaves the voice channel")
+    async def leave(self, interaction: discord.Interaction):
+        if not self._get_voice_client(interaction.guild_id):
+            await interaction.response.send_message("I'm not even in a voice channel.")
+            return
+        await self._disconnect(interaction.guild_id)
         await interaction.response.send_message("*Chii-sama has left. You're welcome.*")
 
     @app_commands.command(name="skip", description="Skip the current song")
     async def skip(self, interaction: discord.Interaction):
         player = get_player(interaction.guild_id)
-        if not player.voice_client or not player.voice_client.is_playing():
+        vc = self._get_voice_client(interaction.guild_id)
+        if not vc or not vc.is_playing():
             await interaction.response.send_message("Nothing is playing right now.")
             return
-        player.voice_client.stop()
+        vc.stop()
         await interaction.response.send_message("*Chii-sama skips this inferior track.*")
 
     @app_commands.command(name="stop", description="Stop music and leave the voice channel")
     async def stop(self, interaction: discord.Interaction):
-        player = get_player(interaction.guild_id)
-        if player.voice_client:
-            player.queue.clear()
-            player.current = None
-            await player.voice_client.disconnect()
-            player.voice_client = None
+        await self._disconnect(interaction.guild_id)
         await interaction.response.send_message("*Chii-sama has left the stage. You're welcome.*")
 
     @app_commands.command(name="pause", description="Pause the current song")
