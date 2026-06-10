@@ -1,39 +1,34 @@
 import asyncio
-import os
+import re
 from collections import deque
 
+import aiohttp
 import discord
-import yt_dlp
-
-os.environ['PATH'] = '/home/chiisama/.deno/bin:' + os.environ.get('PATH', '')
 from discord import app_commands
 from discord.ext import commands
 
-YTDL_OPTIONS = {
-    'format': 'bestaudio/best[height<=480]/best',
-    'noplaylist': True,
-    'quiet': True,
-    'no_warnings': True,
-    'default_search': 'ytsearch',
-    'source_address': '0.0.0.0',
-    'extractor_args': {
-        'youtube': {
-            'player_client': ['tv_embedded', 'ios'],
-        }
-    },
-}
+INVIDIOUS_INSTANCES = [
+    'https://inv.tux.pizza',
+    'https://invidious.privacyredirect.com',
+    'https://yt.artemislena.eu',
+    'https://invidious.slipfox.xyz',
+]
 
 FFMPEG_OPTIONS = {
     'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
     'options': '-vn',
 }
 
+YT_ID_PATTERN = re.compile(
+    r'(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/shorts/)([a-zA-Z0-9_-]{11})'
+)
+
 
 class Song:
-    def __init__(self, url: str, title: str, webpage_url: str, requester: str):
+    def __init__(self, url: str, title: str, video_id: str, requester: str):
         self.url = url
         self.title = title
-        self.webpage_url = webpage_url
+        self.webpage_url = f"https://www.youtube.com/watch?v={video_id}"
         self.requester = requester
 
 
@@ -53,13 +48,76 @@ def get_player(guild_id: int) -> GuildPlayer:
     return _players[guild_id]
 
 
+async def _invidious_get(path: str, params: dict) -> dict | list | None:
+    for instance in INVIDIOUS_INSTANCES:
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    f"{instance}{path}",
+                    params=params,
+                    timeout=aiohttp.ClientTimeout(total=15),
+                ) as resp:
+                    if resp.status == 200:
+                        return await resp.json()
+        except Exception as e:
+            print(f"[Music] Invidious {instance} error: {e}")
+    return None
+
+
+async def resolve_query(query: str) -> tuple[str, str] | None:
+    """Returns (video_id, title) or None."""
+    match = YT_ID_PATTERN.search(query)
+    if match:
+        video_id = match.group(1)
+        data = await _invidious_get(f"/api/v1/videos/{video_id}", {"fields": "title,videoId"})
+        title = data.get("title", "Unknown") if data else "Unknown"
+        return video_id, title
+
+    results = await _invidious_get("/api/v1/search", {"q": query, "type": "video", "fields": "videoId,title"})
+    if results and isinstance(results, list):
+        first = results[0]
+        return first["videoId"], first.get("title", "Unknown")
+    return None
+
+
+async def get_stream_url(video_id: str) -> str | None:
+    data = await _invidious_get(
+        f"/api/v1/videos/{video_id}",
+        {"fields": "adaptiveFormats,formatStreams"}
+    )
+    if not data:
+        return None
+
+    best_url, best_bitrate = None, 0
+    for fmt in data.get("adaptiveFormats", []):
+        if fmt.get("type", "").startswith("audio/"):
+            bitrate = int(fmt.get("bitrate", 0))
+            if bitrate > best_bitrate:
+                best_bitrate = bitrate
+                best_url = fmt.get("url")
+
+    if best_url:
+        return best_url
+
+    for fmt in data.get("formatStreams", []):
+        if fmt.get("url"):
+            return fmt["url"]
+
+    return None
+
+
 class Music(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
     async def _play_next(self, guild_id: int):
         player = get_player(guild_id)
-        if not player.queue or not player.voice_client:
+        if not player.queue:
+            player.current = None
+            return
+
+        vc = self._get_voice_client(guild_id)
+        if not vc:
             player.current = None
             return
 
@@ -72,78 +130,7 @@ class Music(commands.Cog):
                 print(f"[Music ERROR] {error}")
             asyncio.run_coroutine_threadsafe(self._play_next(guild_id), self.bot.loop)
 
-        player.voice_client.play(source, after=after_play)
-
-    async def _ensure_voice(self, interaction: discord.Interaction) -> bool:
-        if not interaction.user.voice:
-            await interaction.response.send_message(
-                "You need to be in a voice channel first, peasant."
-            )
-            return False
-        player = get_player(interaction.guild_id)
-        if not player.voice_client or not player.voice_client.is_connected():
-            player.voice_client = await interaction.user.voice.channel.connect()
-        elif player.voice_client.channel != interaction.user.voice.channel:
-            await player.voice_client.move_to(interaction.user.voice.channel)
-        return True
-
-    @app_commands.command(name="play", description="Play a song from YouTube, YouTube Music, or SoundCloud")
-    @app_commands.describe(query="Song name or paste a URL")
-    async def play(self, interaction: discord.Interaction, query: str):
-        await interaction.response.defer()
-
-        if not interaction.user.voice:
-            await interaction.followup.send("You need to be in a voice channel first, peasant.")
-            return
-
-        player = get_player(interaction.guild_id)
-        print(f"[Music] Connecting to voice for guild {interaction.guild_id}...")
-        if not player.voice_client or not player.voice_client.is_connected():
-            player.voice_client = await interaction.user.voice.channel.connect()
-        elif player.voice_client.channel != interaction.user.voice.channel:
-            await player.voice_client.move_to(interaction.user.voice.channel)
-        print(f"[Music] Voice connected. Fetching: {query!r}")
-
-        loop = asyncio.get_running_loop()
-        try:
-            ytdl = yt_dlp.YoutubeDL(YTDL_OPTIONS)
-            data = await asyncio.wait_for(
-                loop.run_in_executor(None, lambda: ytdl.extract_info(query, download=False)),
-                timeout=30,
-            )
-            if 'entries' in data:
-                data = data['entries'][0]
-            print(f"[Music] Fetched: {data.get('title')!r}")
-        except asyncio.TimeoutError:
-            print(f"[Music] yt_dlp timed out for query: {query!r}")
-            await interaction.followup.send("*Chii-sama got tired of waiting.* YouTube took too long — try again.")
-            return
-        except Exception as e:
-            print(f"[Music ERROR] {type(e).__name__}: {e}")
-            await interaction.followup.send(
-                "*Chii-sama couldn't find that.* Try a different search or URL."
-            )
-            return
-
-        song = Song(
-            url=data['url'],
-            title=data.get('title', 'Unknown'),
-            webpage_url=data.get('webpage_url', query),
-            requester=interaction.user.display_name,
-        )
-
-        player = get_player(interaction.guild_id)
-        player.queue.append(song)
-
-        if not player.voice_client.is_playing() and not player.voice_client.is_paused():
-            await self._play_next(interaction.guild_id)
-            await interaction.followup.send(
-                f"Now playing: **{song.title}**\nRequested by: {song.requester}"
-            )
-        else:
-            await interaction.followup.send(
-                f"Added to queue (#{len(player.queue)}): **{song.title}**"
-            )
+        vc.play(source, after=after_play)
 
     def _get_voice_client(self, guild_id: int) -> discord.VoiceClient | None:
         for vc in self.bot.voice_clients:
@@ -160,6 +147,53 @@ class Music(commands.Cog):
             await vc.disconnect()
         player.voice_client = None
 
+    @app_commands.command(name="play", description="Play a song from YouTube")
+    @app_commands.describe(query="Song name or YouTube URL")
+    async def play(self, interaction: discord.Interaction, query: str):
+        await interaction.response.defer()
+
+        if not interaction.user.voice:
+            await interaction.followup.send("You need to be in a voice channel first, peasant.")
+            return
+
+        player = get_player(interaction.guild_id)
+        if not player.voice_client or not player.voice_client.is_connected():
+            player.voice_client = await interaction.user.voice.channel.connect()
+        elif player.voice_client.channel != interaction.user.voice.channel:
+            await player.voice_client.move_to(interaction.user.voice.channel)
+
+        try:
+            result = await asyncio.wait_for(resolve_query(query), timeout=15)
+        except asyncio.TimeoutError:
+            await interaction.followup.send("*Chii-sama got tired of waiting.* Search took too long — try again.")
+            return
+
+        if not result:
+            await interaction.followup.send("*Chii-sama couldn't find that.* Try a different search or URL.")
+            return
+
+        video_id, title = result
+
+        try:
+            stream_url = await asyncio.wait_for(get_stream_url(video_id), timeout=15)
+        except asyncio.TimeoutError:
+            await interaction.followup.send("*Chii-sama got tired of waiting.* Stream fetch timed out — try again.")
+            return
+
+        if not stream_url:
+            await interaction.followup.send("*Chii-sama couldn't get the stream.* Try a different song.")
+            return
+
+        song = Song(url=stream_url, title=title, video_id=video_id, requester=interaction.user.display_name)
+        player.queue.append(song)
+
+        vc = self._get_voice_client(interaction.guild_id)
+        if vc and not vc.is_playing() and not vc.is_paused():
+            await self._play_next(interaction.guild_id)
+            await interaction.followup.send(f"Now playing: **{song.title}**\nRequested by: {song.requester}")
+        else:
+            await interaction.followup.send(f"Added to queue (#{len(player.queue)}): **{song.title}**")
+
     @app_commands.command(name="leave", description="Chii-sama leaves the voice channel")
     async def leave(self, interaction: discord.Interaction):
         if not self._get_voice_client(interaction.guild_id):
@@ -170,7 +204,6 @@ class Music(commands.Cog):
 
     @app_commands.command(name="skip", description="Skip the current song")
     async def skip(self, interaction: discord.Interaction):
-        player = get_player(interaction.guild_id)
         vc = self._get_voice_client(interaction.guild_id)
         if not vc or not vc.is_playing():
             await interaction.response.send_message("Nothing is playing right now.")
@@ -185,18 +218,18 @@ class Music(commands.Cog):
 
     @app_commands.command(name="pause", description="Pause the current song")
     async def pause(self, interaction: discord.Interaction):
-        player = get_player(interaction.guild_id)
-        if player.voice_client and player.voice_client.is_playing():
-            player.voice_client.pause()
+        vc = self._get_voice_client(interaction.guild_id)
+        if vc and vc.is_playing():
+            vc.pause()
             await interaction.response.send_message("*Chii-sama pauses for dramatic effect.*")
         else:
             await interaction.response.send_message("Nothing is playing.")
 
     @app_commands.command(name="resume", description="Resume the paused song")
     async def resume(self, interaction: discord.Interaction):
-        player = get_player(interaction.guild_id)
-        if player.voice_client and player.voice_client.is_paused():
-            player.voice_client.resume()
+        vc = self._get_voice_client(interaction.guild_id)
+        if vc and vc.is_paused():
+            vc.resume()
             await interaction.response.send_message("*The performance continues!*")
         else:
             await interaction.response.send_message("Nothing is paused.")
@@ -205,9 +238,7 @@ class Music(commands.Cog):
     async def queue_cmd(self, interaction: discord.Interaction):
         player = get_player(interaction.guild_id)
         if not player.current and not player.queue:
-            await interaction.response.send_message(
-                "The queue is empty. Request something worthy of Chii-sama!"
-            )
+            await interaction.response.send_message("The queue is empty. Request something worthy of Chii-sama!")
             return
 
         embed = discord.Embed(title="Chii-sama's Playlist", color=0xFFB7C5)
@@ -218,10 +249,7 @@ class Music(commands.Cog):
                 inline=False,
             )
         if player.queue:
-            lines = [
-                f"{i+1}. **{s.title}** — {s.requester}"
-                for i, s in enumerate(player.queue)
-            ]
+            lines = [f"{i+1}. **{s.title}** — {s.requester}" for i, s in enumerate(player.queue)]
             embed.add_field(name="Up Next", value="\n".join(lines), inline=False)
 
         await interaction.response.send_message(embed=embed)
