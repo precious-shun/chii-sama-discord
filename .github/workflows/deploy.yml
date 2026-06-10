@@ -19,15 +19,16 @@ jobs:
           STABLE_HORDE_KEY: ${{ secrets.STABLE_HORDE_KEY }}
           CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USERNAME }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT }}
-          envs: DISCORD_TOKEN, GEMINI_API_KEY_1, GEMINI_API_KEY_2, GEMINI_API_KEY_3, STABLE_HORDE_KEY, CF_ACCOUNT_ID, CF_API_TOKEN
+          envs: DISCORD_TOKEN, GEMINI_API_KEY_1, GEMINI_API_KEY_2, GEMINI_API_KEY_3, STABLE_HORDE_KEY, CF_ACCOUNT_ID, CF_API_TOKEN, YOUTUBE_API_KEY
           script: |
             # 1. Execute all directory and file operations AS the chiisama user
-            sudo -u chiisama DISCORD_TOKEN="$DISCORD_TOKEN" GEMINI_API_KEY_1="$GEMINI_API_KEY_1" GEMINI_API_KEY_2="$GEMINI_API_KEY_2" GEMINI_API_KEY_3="$GEMINI_API_KEY_3" STABLE_HORDE_KEY="$STABLE_HORDE_KEY" CF_ACCOUNT_ID="$CF_ACCOUNT_ID" CF_API_TOKEN="$CF_API_TOKEN" bash -c '
+            sudo -u chiisama DISCORD_TOKEN="$DISCORD_TOKEN" GEMINI_API_KEY_1="$GEMINI_API_KEY_1" GEMINI_API_KEY_2="$GEMINI_API_KEY_2" GEMINI_API_KEY_3="$GEMINI_API_KEY_3" STABLE_HORDE_KEY="$STABLE_HORDE_KEY" CF_ACCOUNT_ID="$CF_ACCOUNT_ID" CF_API_TOKEN="$CF_API_TOKEN" YOUTUBE_API_KEY="$YOUTUBE_API_KEY" bash -c '
               cd /opt/chii-sama
 
               # Fetch latest changes
@@ -46,6 +47,7 @@ jobs:
               echo "STABLE_HORDE_KEY=$STABLE_HORDE_KEY" >> .env
               echo "CF_ACCOUNT_ID=$CF_ACCOUNT_ID" >> .env
               echo "CF_API_TOKEN=$CF_API_TOKEN" >> .env
+              echo "YOUTUBE_API_KEY=$YOUTUBE_API_KEY" >> .env
               chmod 600 .env
             '
             
