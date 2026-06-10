@@ -55,20 +55,26 @@ async def _try_instance(session: aiohttp.ClientSession, instance: str, path: str
             params=params,
             timeout=aiohttp.ClientTimeout(total=10),
         ) as resp:
+            print(f"[Music] {instance} -> {resp.status}")
             if resp.status == 200:
                 return await resp.json()
     except Exception as e:
-        print(f"[Music] Invidious {instance} error: {e}")
+        print(f"[Music] {instance} error: {e}")
     return None
 
 
 async def _invidious_get(path: str, params: dict) -> dict | list | None:
     async with aiohttp.ClientSession() as session:
-        tasks = [_try_instance(session, inst, path, params) for inst in INVIDIOUS_INSTANCES]
-        for coro in asyncio.as_completed(tasks):
-            result = await coro
-            if result is not None:
-                return result
+        tasks = [asyncio.create_task(_try_instance(session, inst, path, params)) for inst in INVIDIOUS_INSTANCES]
+        result = None
+        try:
+            for fut in asyncio.as_completed(tasks):
+                result = await fut
+                if result is not None:
+                    return result
+        finally:
+            for t in tasks:
+                t.cancel()
     return None
 
 
@@ -81,7 +87,8 @@ async def resolve_query(query: str) -> tuple[str, str] | None:
         title = data.get("title", "Unknown") if data else "Unknown"
         return video_id, title
 
-    results = await _invidious_get("/api/v1/search", {"q": query, "type": "video", "fields": "videoId,title"})
+    results = await _invidious_get("/api/v1/search", {"q": query, "type": "video"})
+    print(f"[Music] search results type={type(results).__name__} len={len(results) if isinstance(results, list) else 'N/A'}")
     if results and isinstance(results, list):
         first = results[0]
         return first["videoId"], first.get("title", "Unknown")
