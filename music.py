@@ -48,19 +48,27 @@ def get_player(guild_id: int) -> GuildPlayer:
     return _players[guild_id]
 
 
+async def _try_instance(session: aiohttp.ClientSession, instance: str, path: str, params: dict) -> dict | list | None:
+    try:
+        async with session.get(
+            f"{instance}{path}",
+            params=params,
+            timeout=aiohttp.ClientTimeout(total=10),
+        ) as resp:
+            if resp.status == 200:
+                return await resp.json()
+    except Exception as e:
+        print(f"[Music] Invidious {instance} error: {e}")
+    return None
+
+
 async def _invidious_get(path: str, params: dict) -> dict | list | None:
-    for instance in INVIDIOUS_INSTANCES:
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{instance}{path}",
-                    params=params,
-                    timeout=aiohttp.ClientTimeout(total=15),
-                ) as resp:
-                    if resp.status == 200:
-                        return await resp.json()
-        except Exception as e:
-            print(f"[Music] Invidious {instance} error: {e}")
+    async with aiohttp.ClientSession() as session:
+        tasks = [_try_instance(session, inst, path, params) for inst in INVIDIOUS_INSTANCES]
+        for coro in asyncio.as_completed(tasks):
+            result = await coro
+            if result is not None:
+                return result
     return None
 
 
