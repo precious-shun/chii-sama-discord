@@ -1,27 +1,39 @@
 import asyncio
+import os
 import re
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 
 import aiohttp
 import discord
+import yt_dlp
 from discord import app_commands
 from discord.ext import commands
+from dotenv import load_dotenv
 
-INVIDIOUS_INSTANCES = [
-    'https://inv.tux.pizza',
-    'https://invidious.privacyredirect.com',
-    'https://yt.artemislena.eu',
-    'https://invidious.slipfox.xyz',
-]
+load_dotenv()
+
+YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
+YOUTUBE_SEARCH_URL = "https://www.googleapis.com/youtube/v3/search"
+
+YT_ID_PATTERN = re.compile(
+    r'(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/shorts/)([a-zA-Z0-9_-]{11})'
+)
 
 FFMPEG_OPTIONS = {
     'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
     'options': '-vn',
 }
 
-YT_ID_PATTERN = re.compile(
-    r'(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/shorts/)([a-zA-Z0-9_-]{11})'
-)
+YDL_OPTS = {
+    'format': 'bestaudio/best',
+    'quiet': True,
+    'no_warnings': True,
+    'username': 'oauth2',
+    'password': '',
+}
+
+_executor = ThreadPoolExecutor(max_workers=2)
 
 
 class Song:
@@ -48,77 +60,56 @@ def get_player(guild_id: int) -> GuildPlayer:
     return _players[guild_id]
 
 
-async def _try_instance(session: aiohttp.ClientSession, instance: str, path: str, params: dict) -> dict | list | None:
-    try:
-        async with session.get(
-            f"{instance}{path}",
-            params=params,
-            timeout=aiohttp.ClientTimeout(total=10),
-        ) as resp:
-            print(f"[Music] {instance} -> {resp.status}")
-            if resp.status == 200:
-                return await resp.json()
-    except Exception as e:
-        print(f"[Music] {instance} error: {e}")
-    return None
-
-
-async def _invidious_get(path: str, params: dict) -> dict | list | None:
-    async with aiohttp.ClientSession() as session:
-        tasks = [asyncio.create_task(_try_instance(session, inst, path, params)) for inst in INVIDIOUS_INSTANCES]
-        result = None
-        try:
-            for fut in asyncio.as_completed(tasks):
-                result = await fut
-                if result is not None:
-                    return result
-        finally:
-            for t in tasks:
-                t.cancel()
-    return None
-
-
-async def resolve_query(query: str) -> tuple[str, str] | None:
-    """Returns (video_id, title) or None."""
+async def search_youtube(query: str) -> tuple[str, str] | None:
+    """Returns (video_id, title) or None. Uses YouTube Data API v3."""
     match = YT_ID_PATTERN.search(query)
     if match:
         video_id = match.group(1)
-        data = await _invidious_get(f"/api/v1/videos/{video_id}", {"fields": "title,videoId"})
-        title = data.get("title", "Unknown") if data else "Unknown"
-        return video_id, title
+        return video_id, query
 
-    results = await _invidious_get("/api/v1/search", {"q": query, "type": "video"})
-    print(f"[Music] search results type={type(results).__name__} len={len(results) if isinstance(results, list) else 'N/A'}")
-    if results and isinstance(results, list):
-        first = results[0]
-        return first["videoId"], first.get("title", "Unknown")
+    params = {
+        "q": query,
+        "type": "video",
+        "part": "snippet",
+        "maxResults": 1,
+        "key": YOUTUBE_API_KEY,
+    }
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                YOUTUBE_SEARCH_URL,
+                params=params,
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    items = data.get("items", [])
+                    if items:
+                        video_id = items[0]["id"]["videoId"]
+                        title = items[0]["snippet"]["title"]
+                        return video_id, title
+                else:
+                    print(f"[Music] YouTube API error: {resp.status} {await resp.text()}")
+    except Exception as e:
+        print(f"[Music] YouTube search error: {e}")
+    return None
+
+
+def _extract_stream_url(video_id: str) -> str | None:
+    url = f"https://www.youtube.com/watch?v={video_id}"
+    try:
+        with yt_dlp.YoutubeDL(YDL_OPTS) as ydl:
+            info = ydl.extract_info(url, download=False)
+            if info:
+                return info.get("url")
+    except Exception as e:
+        print(f"[Music] yt-dlp error: {e}")
     return None
 
 
 async def get_stream_url(video_id: str) -> str | None:
-    data = await _invidious_get(
-        f"/api/v1/videos/{video_id}",
-        {"fields": "adaptiveFormats,formatStreams"}
-    )
-    if not data:
-        return None
-
-    best_url, best_bitrate = None, 0
-    for fmt in data.get("adaptiveFormats", []):
-        if fmt.get("type", "").startswith("audio/"):
-            bitrate = int(fmt.get("bitrate", 0))
-            if bitrate > best_bitrate:
-                best_bitrate = bitrate
-                best_url = fmt.get("url")
-
-    if best_url:
-        return best_url
-
-    for fmt in data.get("formatStreams", []):
-        if fmt.get("url"):
-            return fmt["url"]
-
-    return None
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(_executor, _extract_stream_url, video_id)
 
 
 class Music(commands.Cog):
@@ -178,7 +169,7 @@ class Music(commands.Cog):
             await player.voice_client.move_to(interaction.user.voice.channel)
 
         try:
-            result = await asyncio.wait_for(resolve_query(query), timeout=15)
+            result = await asyncio.wait_for(search_youtube(query), timeout=10)
         except asyncio.TimeoutError:
             await interaction.followup.send("*Chii-sama got tired of waiting.* Search took too long — try again.")
             return
@@ -188,9 +179,10 @@ class Music(commands.Cog):
             return
 
         video_id, title = result
+        await interaction.followup.send(f"*Chii-sama is fetching the stream...* **{title}**")
 
         try:
-            stream_url = await asyncio.wait_for(get_stream_url(video_id), timeout=15)
+            stream_url = await asyncio.wait_for(get_stream_url(video_id), timeout=30)
         except asyncio.TimeoutError:
             await interaction.followup.send("*Chii-sama got tired of waiting.* Stream fetch timed out — try again.")
             return
