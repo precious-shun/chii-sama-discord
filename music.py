@@ -7,14 +7,6 @@ from discord.ext import commands
 PUBLIC_NODES_URL = "https://lavalink-list.ajieblogs.eu.org/All"
 
 
-async def _drop_all_nodes() -> None:
-    try:
-        for node in list(wavelink.Pool.nodes.values()):
-            await node.disconnect()
-    except Exception:
-        pass
-
-
 async def connect_lavalink(bot: commands.Bot) -> bool:
     try:
         async with aiohttp.ClientSession() as session:
@@ -32,9 +24,7 @@ async def connect_lavalink(bot: commands.Bot) -> bool:
 
     v4 = [n for n in raw if isinstance(n, dict) and n.get("version") == "v4"]
     secure = [n for n in v4 if n.get("secure") is True]
-    candidates = (secure or v4)[:20]
-
-    await _drop_all_nodes()
+    candidates = (secure or v4)[:8]
 
     for i, nd in enumerate(candidates):
         host = str(nd.get("host", "")).strip()
@@ -50,18 +40,10 @@ async def connect_lavalink(bot: commands.Bot) -> bool:
         try:
             node = wavelink.Node(identifier=f"pub{i}", uri=uri, password=password)
             await wavelink.Pool.connect(nodes=[node], client=bot)
-
-            # verify the node actually serves search results before trusting it
-            test = await wavelink.Playable.search("test")
-            if test:
-                print(f"[Music] Connected and verified Lavalink: {uri}")
-                return True
-            else:
-                print(f"[Music] Node {uri} connected but search returned nothing, skipping")
-                await _drop_all_nodes()
+            print(f"[Music] Connected to Lavalink: {uri}")
+            return True
         except Exception as e:
             print(f"[Music] Node {uri} failed: {e}")
-            await _drop_all_nodes()
 
     print("[Music] No working Lavalink node found.")
     return False
@@ -72,7 +54,8 @@ class Music(commands.Cog):
         self.bot = bot
 
     async def cog_load(self):
-        await connect_lavalink(self.bot)
+        ok = await connect_lavalink(self.bot)
+        print(f"[Music] Lavalink connected: {ok}")
 
     @commands.Cog.listener()
     async def on_wavelink_inactive_player(self, player: wavelink.Player):
@@ -97,18 +80,15 @@ class Music(commands.Cog):
         elif player.channel != interaction.user.voice.channel:
             await player.move_to(interaction.user.voice.channel)
 
-        if not wavelink.Pool.nodes:
-            ok = await connect_lavalink(self.bot)
-            if not ok:
-                await interaction.followup.send("*Chii-sama can't reach the music server.* No Lavalink node available.")
-                return
-
         try:
             tracks = await wavelink.Playable.search(query)
         except Exception as e:
-            print(f"[Music] Search error ({type(e).__name__}): {e}")
-            await interaction.followup.send(f"*Chii-sama hit an error.* `{type(e).__name__}: {e}`")
+            await interaction.followup.send(f"**[DEBUG] Search error:** `{type(e).__name__}: {e}`")
             return
+
+        node = wavelink.Pool.get_node()
+        node_info = f"`{node.uri}`" if node else "`no node connected`"
+        await interaction.followup.send(f"**[DEBUG]** Node: {node_info} | Query: `{query}` | Results: `{len(tracks) if tracks else 0}`")
 
         if not tracks:
             await interaction.followup.send("*Chii-sama couldn't find that.* Try a different search.")
