@@ -42,13 +42,15 @@ async def connect_lavalink(bot: commands.Bot) -> bool:
             node = wavelink.Node(identifier="main", uri=uri, password=password)
             await wavelink.Pool.connect(nodes=[node], client=bot)
 
-            test = await wavelink.Playable.search("test")
+            test = await wavelink.Playable.search("never gonna give you up rick astley")
             if test:
                 print(f"[Music] Verified node: {uri}")
                 return True
             print(f"[Music] Node {uri} returned no results, skipping")
+            wavelink.Pool.nodes.clear()
         except Exception as e:
             print(f"[Music] Node {uri} failed: {e}")
+            wavelink.Pool.nodes.clear()
 
     print("[Music] No working Lavalink node found.")
     return False
@@ -115,8 +117,17 @@ class Music(commands.Cog):
         await interaction.followup.send(f"**[DEBUG]** Node: {node_info} | Query: `{query}` | Results: `{len(tracks) if tracks else 0}`")
 
         if not tracks:
-            await interaction.followup.send("*Chii-sama couldn't find that.* Try a different search.")
-            return
+            await interaction.followup.send("**[DEBUG]** Node returned 0 results — switching node...")
+            ok = await connect_lavalink(self.bot)
+            if ok:
+                try:
+                    tracks = await wavelink.Playable.search(query)
+                except Exception as e:
+                    await interaction.followup.send(f"**[DEBUG] Search error after re-connect:** `{e}`")
+                    return
+            if not tracks:
+                await interaction.followup.send("*Chii-sama couldn't find that.* Try a different search.")
+                return
 
         if isinstance(tracks, wavelink.Playlist):
             for t in tracks.tracks:
