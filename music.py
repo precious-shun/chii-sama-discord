@@ -42,9 +42,9 @@ async def connect_lavalink(bot: commands.Bot) -> bool:
             node = wavelink.Node(identifier="main", uri=uri, password=password)
             await wavelink.Pool.connect(nodes=[node], client=bot)
 
-            test = await wavelink.Playable.search("never gonna give you up rick astley")
+            test = await wavelink.Playable.search("scsearch:never gonna give you up")
             if test:
-                print(f"[Music] Verified node: {uri}")
+                print(f"[Music] Verified node (SoundCloud): {uri}")
                 return True
             print(f"[Music] Node {uri} returned no results, skipping")
             wavelink.Pool.nodes.clear()
@@ -119,9 +119,10 @@ class Music(commands.Cog):
         if not tracks:
             await interaction.followup.send("**[DEBUG]** YouTube returned 0 — trying SoundCloud...")
             try:
-                tracks = await wavelink.Playable.search(query, source=wavelink.TrackSource.SoundCloud)
+                tracks = await wavelink.Playable.search(f"scsearch:{query}")
             except Exception as e:
                 await interaction.followup.send(f"**[DEBUG] SoundCloud error:** `{e}`")
+                tracks = []
             if not tracks:
                 await interaction.followup.send("*Chii-sama couldn't find that.* Try a different search.")
                 return
