@@ -117,17 +117,15 @@ class Music(commands.Cog):
         await interaction.followup.send(f"**[DEBUG]** Node: {node_info} | Query: `{query}` | Results: `{len(tracks) if tracks else 0}`")
 
         if not tracks:
-            await interaction.followup.send("**[DEBUG]** Node returned 0 results — switching node...")
-            ok = await connect_lavalink(self.bot)
-            if ok:
-                try:
-                    tracks = await wavelink.Playable.search(query)
-                except Exception as e:
-                    await interaction.followup.send(f"**[DEBUG] Search error after re-connect:** `{e}`")
-                    return
+            await interaction.followup.send("**[DEBUG]** YouTube returned 0 — trying SoundCloud...")
+            try:
+                tracks = await wavelink.Playable.search(query, source=wavelink.TrackSource.SoundCloud)
+            except Exception as e:
+                await interaction.followup.send(f"**[DEBUG] SoundCloud error:** `{e}`")
             if not tracks:
                 await interaction.followup.send("*Chii-sama couldn't find that.* Try a different search.")
                 return
+            await interaction.followup.send(f"**[DEBUG]** SoundCloud results: `{len(tracks)}`")
 
         if isinstance(tracks, wavelink.Playlist):
             for t in tracks.tracks:
