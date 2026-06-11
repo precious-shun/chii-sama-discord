@@ -24,7 +24,7 @@ async def connect_lavalink(bot: commands.Bot) -> bool:
 
     v4 = [n for n in raw if isinstance(n, dict) and n.get("version") == "v4"]
     secure = [n for n in v4 if n.get("secure") is True]
-    candidates = (secure or v4)[:8]
+    candidates = (secure or v4)[:20]
 
     for i, nd in enumerate(candidates):
         host = str(nd.get("host", "")).strip()
@@ -38,10 +38,15 @@ async def connect_lavalink(bot: commands.Bot) -> bool:
         scheme = "wss" if ssl else "ws"
         uri = f"{scheme}://{host}:{port}"
         try:
-            node = wavelink.Node(identifier=f"pub{i}", uri=uri, password=password)
+            wavelink.Pool.nodes.clear()
+            node = wavelink.Node(identifier="main", uri=uri, password=password)
             await wavelink.Pool.connect(nodes=[node], client=bot)
-            print(f"[Music] Connected to Lavalink: {uri}")
-            return True
+
+            test = await wavelink.Playable.search("test")
+            if test:
+                print(f"[Music] Verified node: {uri}")
+                return True
+            print(f"[Music] Node {uri} returned no results, skipping")
         except Exception as e:
             print(f"[Music] Node {uri} failed: {e}")
 
