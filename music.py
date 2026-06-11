@@ -54,8 +54,7 @@ class Music(commands.Cog):
         self.bot = bot
 
     async def cog_load(self):
-        ok = await connect_lavalink(self.bot)
-        print(f"[Music] Lavalink connected: {ok}")
+        await connect_lavalink(self.bot)
 
     @commands.Cog.listener()
     async def on_wavelink_inactive_player(self, player: wavelink.Player):
@@ -83,12 +82,9 @@ class Music(commands.Cog):
         try:
             tracks = await wavelink.Playable.search(query)
         except Exception as e:
-            await interaction.followup.send(f"**[DEBUG] Search error:** `{type(e).__name__}: {e}`")
+            print(f"[Music] Search error: {e}")
+            await interaction.followup.send("*Chii-sama couldn't find that.* Try a different search.")
             return
-
-        node = wavelink.Pool.get_node()
-        node_info = f"`{node.uri}`" if node else "`no node connected`"
-        await interaction.followup.send(f"**[DEBUG]** Node: {node_info} | Query: `{query}` | Results: `{len(tracks) if tracks else 0}`")
 
         if not tracks:
             await interaction.followup.send("*Chii-sama couldn't find that.* Try a different search.")
