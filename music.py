@@ -66,6 +66,24 @@ class Music(commands.Cog):
     async def on_wavelink_inactive_player(self, player: wavelink.Player):
         await player.disconnect()
 
+    @commands.Cog.listener()
+    async def on_wavelink_track_start(self, payload: wavelink.TrackStartEventPayload):
+        ch = getattr(payload.player, "text_channel", None)
+        if ch:
+            await ch.send(f"**[DEBUG]** Track started in Lavalink: **{payload.track.title}**")
+
+    @commands.Cog.listener()
+    async def on_wavelink_track_end(self, payload: wavelink.TrackEndEventPayload):
+        ch = getattr(payload.player, "text_channel", None)
+        if ch:
+            await ch.send(f"**[DEBUG]** Track ended — reason: `{payload.reason}`")
+
+    @commands.Cog.listener()
+    async def on_wavelink_track_exception(self, payload: wavelink.TrackExceptionEventPayload):
+        ch = getattr(payload.player, "text_channel", None)
+        if ch:
+            await ch.send(f"**[DEBUG]** Track exception: `{payload.exception}`")
+
     def _player(self, guild: discord.Guild) -> "wavelink.Player | None":
         return guild.voice_client  # type: ignore
 
@@ -84,6 +102,7 @@ class Music(commands.Cog):
             player.autoplay = wavelink.AutoPlayMode.partial
         elif player.channel != interaction.user.voice.channel:
             await player.move_to(interaction.user.voice.channel)
+        player.text_channel = interaction.channel
 
         try:
             tracks = await wavelink.Playable.search(query)
