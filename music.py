@@ -79,11 +79,19 @@ class Music(commands.Cog):
         elif player.channel != interaction.user.voice.channel:
             await player.move_to(interaction.user.voice.channel)
 
+        node = wavelink.Pool.get_node()
+        if not node:
+            ok = await connect_lavalink(self.bot)
+            if not ok:
+                await interaction.followup.send("*Chii-sama can't reach the music server.* No Lavalink node available.")
+                return
+            node = wavelink.Pool.get_node()
+
         try:
             tracks = await wavelink.Playable.search(query)
         except Exception as e:
-            print(f"[Music] Search error: {e}")
-            await interaction.followup.send("*Chii-sama couldn't find that.* Try a different search.")
+            print(f"[Music] Search error ({type(e).__name__}): {e}")
+            await interaction.followup.send(f"*Chii-sama hit an error.* `{type(e).__name__}: {e}`")
             return
 
         if not tracks:
