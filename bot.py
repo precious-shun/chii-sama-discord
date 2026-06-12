@@ -899,9 +899,38 @@ async def rollrequest(
 
     if everyone:
         dnd_role = discord.utils.get(interaction.guild.roles, name="DnD players")
-        mention = dnd_role.mention if dnd_role else "@DnD players"
+        role_mention = dnd_role.mention if dnd_role else "@DnD players"
         verb = "roll" if required else "MAY roll"
-        await interaction.followup.send(f"{mention} — Everyone {verb} for **{check_label}**.")
+        msg = f"{role_mention} — Everyone {verb} for **{check_label}**."
+
+        all_chars = database.get_all_characters()
+        char_id_to_user = {char_id: user_id for user_id, char_id in all_chars}
+
+        ev_players: list[discord.Member] = []
+        ev_labels: list[str] = []
+
+        if char_id_to_user:
+            seed_id = next(iter(char_id_to_user))
+            seed_data = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: fetch_character_sync(seed_id)
+            )
+            if isinstance(seed_data, dict):
+                campaign_chars = ((seed_data.get("data") or {}).get("campaign") or {}).get("characters") or []
+                for cc in campaign_chars:
+                    cid = cc.get("characterId")
+                    if cid not in char_id_to_user:
+                        continue
+                    member = interaction.guild.get_member(char_id_to_user[cid])
+                    if not member:
+                        continue
+                    ev_players.append(member)
+                    ev_labels.append(cc.get("characterName") or member.display_name)
+
+        if ev_players:
+            ev_view = RollView(ev_players, check, ev_labels, ["normal"] * len(ev_players))
+            await interaction.followup.send(msg, view=ev_view)
+        else:
+            await interaction.followup.send(msg)
         return
 
     if not player1:

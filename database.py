@@ -119,6 +119,16 @@ def link_character(user_id: int, character_id: int):
     conn.close()
 
 
+def get_all_characters() -> list[tuple[int, int]]:
+    """Returns all (user_id, character_id) pairs."""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT user_id, character_id FROM characters")
+    rows = c.fetchall()
+    conn.close()
+    return rows
+
+
 def get_character_id(user_id: int) -> int | None:
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
