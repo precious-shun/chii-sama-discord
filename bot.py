@@ -862,6 +862,8 @@ _MODE_CHOICES = [
 @bot.tree.command(name="rollrequest", description="Request players to roll a check")
 @app_commands.describe(
     check="Type of check (e.g. Perception, Stealth)",
+    everyone="Tag @DnD players instead of specific players (default: False)",
+    required="If False, says 'MAY roll' instead of 'roll' (default: True)",
     player1="Player 1", mode1="Roll mode for player 1",
     player2="Player 2", mode2="Roll mode for player 2",
     player3="Player 3", mode3="Roll mode for player 3",
@@ -876,7 +878,9 @@ _MODE_CHOICES = [
 async def rollrequest(
     interaction: discord.Interaction,
     check: str,
-    player1: discord.Member,
+    everyone: bool = False,
+    required: bool = True,
+    player1: discord.Member | None = None,
     mode1: str = "normal",
     player2: discord.Member | None = None,
     mode2: str = "normal",
@@ -891,6 +895,18 @@ async def rollrequest(
 ):
     await interaction.response.defer()
     check = resolve_check(check)
+    check_label = _check_label(check)
+
+    if everyone:
+        dnd_role = discord.utils.get(interaction.guild.roles, name="DnD players")
+        mention = dnd_role.mention if dnd_role else "@DnD players"
+        verb = "roll" if required else "MAY roll"
+        await interaction.followup.send(f"{mention} — Everyone {verb} for **{check_label}**.")
+        return
+
+    if not player1:
+        await interaction.followup.send("Specify at least one player, or set everyone to True.", ephemeral=True)
+        return
 
     entries = [
         (player1, mode1), (player2, mode2), (player3, mode3),
@@ -915,7 +931,6 @@ async def rollrequest(
     labels = await asyncio.gather(*[get_label(p) for p in players])
     mentions = " ".join(p.mention for p in players)
 
-    # Build display name for each player in the sentence body
     def sentence_name(p: discord.Member, label: str) -> str:
         char_id = database.get_character_id(p.id)
         return f"**{label}**" if char_id and label != p.display_name else p.mention
@@ -941,10 +956,9 @@ async def rollrequest(
 
     mode_sentence = " " + "; ".join(parts) + "." if parts else ""
 
-    check_label = _check_label(check)
     view = RollView(players, check, list(labels), modes)
     await interaction.followup.send(
-        f"{mentions} — The DM calls for a **{check_label}**.{mode_sentence}",
+        f"{mentions} — roll for **{check_label}**.{mode_sentence}",
         view=view,
     )
 
