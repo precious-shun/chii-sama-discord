@@ -1000,9 +1000,10 @@ async def rollrequest(
 
     mode_sentence = " " + "; ".join(parts) + "." if parts else ""
 
+    verb = "roll" if required else "MAY roll"
     view = RollView(players, check, list(labels), modes)
     await interaction.followup.send(
-        f"{mentions} — roll for **{check_label}**.{mode_sentence}",
+        f"{mentions} — {verb} for **{check_label}**.{mode_sentence}",
         view=view,
     )
 
