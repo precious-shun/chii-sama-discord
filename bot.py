@@ -916,15 +916,24 @@ async def rollrequest(
             )
             if isinstance(seed_data, dict):
                 campaign_chars = ((seed_data.get("data") or {}).get("campaign") or {}).get("characters") or []
-                for cc in campaign_chars:
-                    cid = cc.get("characterId")
-                    if cid not in char_id_to_user:
-                        continue
-                    member = interaction.guild.get_member(char_id_to_user[cid])
-                    if not member:
-                        continue
-                    ev_players.append(member)
-                    ev_labels.append(cc.get("characterName") or member.display_name)
+                candidates = [
+                    (char_id_to_user[cc["characterId"]], cc.get("characterName"))
+                    for cc in campaign_chars
+                    if cc.get("characterId") in char_id_to_user
+                ]
+
+                async def fetch_member_safe(user_id: int, char_name: str):
+                    try:
+                        m = await interaction.guild.fetch_member(user_id)
+                        return m, char_name or m.display_name
+                    except discord.NotFound:
+                        return None, None
+
+                results = await asyncio.gather(*[fetch_member_safe(uid, name) for uid, name in candidates])
+                for member, label in results:
+                    if member:
+                        ev_players.append(member)
+                        ev_labels.append(label)
 
         if ev_players:
             ev_view = RollView(ev_players, check, ev_labels, ["normal"] * len(ev_players))
