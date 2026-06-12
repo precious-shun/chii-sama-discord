@@ -31,6 +31,12 @@ def init_db():
             character_id INTEGER NOT NULL
         )
     """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS guild_campaigns (
+            guild_id INTEGER PRIMARY KEY,
+            campaign_name TEXT NOT NULL
+        )
+    """)
     conn.commit()
     conn.close()
 
@@ -117,6 +123,26 @@ def get_character_id(user_id: int) -> int | None:
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("SELECT character_id FROM characters WHERE user_id = ?", (user_id,))
+    row = c.fetchone()
+    conn.close()
+    return row[0] if row else None
+
+
+def set_campaign(guild_id: int, campaign_name: str):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute(
+        "INSERT OR REPLACE INTO guild_campaigns (guild_id, campaign_name) VALUES (?, ?)",
+        (guild_id, campaign_name),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_campaign(guild_id: int) -> str | None:
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT campaign_name FROM guild_campaigns WHERE guild_id = ?", (guild_id,))
     row = c.fetchone()
     conn.close()
     return row[0] if row else None

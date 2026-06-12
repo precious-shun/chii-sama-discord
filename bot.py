@@ -1370,4 +1370,19 @@ async def dndskillissue(interaction: discord.Interaction, obstacle: str):
 
 
 
+@bot.tree.command(name="setcampaign", description="Set the active D&D campaign name for this server")
+@app_commands.describe(name="The campaign name (e.g. Grand Thieves Insufficient)")
+@app_commands.checks.has_any_role("DM", "puppet ppl")
+async def setcampaign(interaction: discord.Interaction, name: str):
+    database.set_campaign(interaction.guild_id, name)
+    await interaction.response.send_message(
+        f"Campaign set to **{name}**.", ephemeral=True
+    )
+
+@setcampaign.error
+async def setcampaign_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    if isinstance(error, app_commands.MissingAnyRole):
+        await interaction.response.send_message("You don't have permission to use this.", ephemeral=True)
+
+
 bot.run(DISCORD_TOKEN)
