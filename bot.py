@@ -859,6 +859,11 @@ _MODE_CHOICES = [
     app_commands.Choice(name="Disadvantage", value="disadvantage"),
 ]
 
+_EVERYONE_CHOICES = [
+    app_commands.Choice(name="False", value="false"),
+    app_commands.Choice(name="True", value="true"),
+]
+
 @bot.tree.command(name="rollrequest", description="Request players to roll a check")
 @app_commands.describe(
     check="Type of check (e.g. Perception, Stealth)",
@@ -872,13 +877,14 @@ _MODE_CHOICES = [
     player6="Player 6", mode6="Roll mode for player 6",
 )
 @app_commands.choices(
+    everyone=_EVERYONE_CHOICES,
     mode1=_MODE_CHOICES, mode2=_MODE_CHOICES, mode3=_MODE_CHOICES,
     mode4=_MODE_CHOICES, mode5=_MODE_CHOICES, mode6=_MODE_CHOICES,
 )
 async def rollrequest(
     interaction: discord.Interaction,
     check: str,
-    everyone: bool = False,
+    everyone: str = "false",
     required: bool = True,
     player1: discord.Member | None = None,
     mode1: str = "normal",
@@ -897,7 +903,7 @@ async def rollrequest(
     check = resolve_check(check)
     check_label = _check_label(check)
 
-    if everyone:
+    if everyone == "true":
         dnd_role = discord.utils.get(interaction.guild.roles, name="DnD players")
         role_mention = dnd_role.mention if dnd_role else "@DnD players"
         verb = "roll" if required else "MAY roll"
