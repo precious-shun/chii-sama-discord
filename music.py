@@ -142,16 +142,20 @@ def _dig_title(node, video_id, depth=0):
     return None
 
 
-async def _get_stream(video_id: str) -> tuple[str, str] | None:
-    """Try each client in order. Returns (stream_url, title) or None."""
+async def _get_stream(video_id: str) -> tuple[str, str, list[str]] | None:
+    """Try each client in order. Returns (stream_url, title, debug_lines) or None."""
+    debug = []
     for client in _PLAYER_CLIENTS:
-        result = await _try_client(video_id, client)
+        result, reason = await _try_client(video_id, client)
         if result:
-            return result
-    return None
+            debug.append(f"✅ {client['name']}: OK")
+            return result[0], result[1], debug
+        debug.append(f"❌ {client['name']}: {reason}")
+    return None, None, debug
 
 
-async def _try_client(video_id: str, client: dict) -> tuple[str, str] | None:
+async def _try_client(video_id: str, client: dict) -> tuple[tuple | None, str]:
+    """Returns ((url, title), '') on success or (None, reason) on failure."""
     body: dict = {
         "context": {"client": client["ctx"]},
         "videoId": video_id,
@@ -173,28 +177,29 @@ async def _try_client(video_id: str, client: dict) -> tuple[str, str] | None:
                 timeout=aiohttp.ClientTimeout(total=10),
             ) as resp:
                 if resp.status != 200:
-                    return None
+                    return None, f"HTTP {resp.status}"
                 data = await resp.json()
     except Exception as e:
         print(f"[Music] {client['name']} request failed: {e}")
-        return None
+        return None, f"request error: {e}"
 
-    if data.get("playabilityStatus", {}).get("status") != "OK":
-        reason = data.get("playabilityStatus", {}).get("reason", "unknown")
+    status = data.get("playabilityStatus", {})
+    if status.get("status") != "OK":
+        reason = status.get("reason") or status.get("status") or "unknown"
         print(f"[Music] {client['name']}: not playable — {reason}")
-        return None
+        return None, f"not playable: {reason}"
 
     title = data.get("videoDetails", {}).get("title", video_id)
     formats = data.get("streamingData", {}).get("adaptiveFormats", [])
 
-    # Only take audio formats with a direct URL (no signatureCipher needed)
     audio = [
         f for f in formats
         if f.get("url") and f.get("mimeType", "").startswith("audio/")
     ]
     if not audio:
-        print(f"[Music] {client['name']}: no direct audio URLs (may be ciphered)")
-        return None
+        total_formats = len(formats)
+        print(f"[Music] {client['name']}: no direct audio URLs (may be ciphered), total formats={total_formats}")
+        return None, f"no direct audio URLs (total formats: {total_formats})"
 
     def _score(f):
         mime = f.get("mimeType", "")
@@ -202,7 +207,7 @@ async def _try_client(video_id: str, client: dict) -> tuple[str, str] | None:
 
     best = max(audio, key=_score)
     print(f"[Music] {client['name']}: got '{title}' — {best.get('mimeType')} {best.get('bitrate', 0)//1000}kbps")
-    return best["url"], title
+    return (best["url"], title), ""
 
 
 # ── Guild state ────────────────────────────────────────────────────────────────
@@ -292,12 +297,13 @@ class Music(commands.Cog):
             return
 
         video_id, _ = result
-        stream = await _get_stream(video_id)
-        if not stream:
-            await interaction.followup.send("*Chii-sama couldn't get the stream.* The video might be unavailable.")
+        stream_url, title, debug_lines = await _get_stream(video_id)
+        if not stream_url:
+            debug_text = "\n".join(debug_lines) if debug_lines else "no clients tried"
+            await interaction.followup.send(
+                f"*Chii-sama couldn't get the stream.* `video_id={video_id}`\n```\n{debug_text}\n```"
+            )
             return
-
-        stream_url, title = stream
         player = _get_player(interaction.guild_id)
         song = Song(url=stream_url, title=title, video_id=video_id, requester=interaction.user.display_name)
         player.queue.append(song)
