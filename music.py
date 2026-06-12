@@ -12,37 +12,47 @@ _SEARCH_URL = "https://music.youtube.com/youtubei/v1/search?prettyPrint=false"
 _PLAYER_URL = "https://www.youtube.com/youtubei/v1/player?prettyPrint=false"
 _YT_ID_RE   = re.compile(r'(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/shorts/)([a-zA-Z0-9_-]{11})')
 
-# Clients with useSignatureTimestamp=False → return direct (non-ciphered) stream URLs.
-# Exact versions from Metrolist's YouTubeClient.kt.
 _PLAYER_CLIENTS = [
-    # ANDROID_VR (Eureka/Chromecast) — no PoToken required, unciphered URLs
+    # TVHTML5_SIMPLY — omitBotguardData bypasses "sign in to confirm you're not a bot"
+    # Sourced from lavalink-devs/youtube-source TvHtml5Simply.java
+    {
+        "name": "TVHTML5_SIMPLY",
+        "ctx": {
+            "clientName": "TVHTML5_SIMPLY",
+            "clientVersion": "1.0",
+            "hl": "en", "gl": "US",
+        },
+        "userAgent": "Mozilla/5.0 (SMART-TV; LINUX; Tizen 6.0) AppleWebKit/538.1 (KHTML, like Gecko) Version/6.0 TV Safari/538.1",
+        "embedUrl": None,
+        "attestationRequest": {"omitBotguardData": True},
+    },
+    # ANDROID_VR (Eureka/Chromecast) — version from youtube-source AndroidVr.java
     {
         "name": "ANDROID_VR",
         "ctx": {
             "clientName": "ANDROID_VR",
-            "clientVersion": "1.71.26",
-            "osName": "Android",
-            "osVersion": "12L",
-            "deviceMake": "Google",
-            "deviceModel": "eureka_ena",
-            "androidSdkVersion": "32",
+            "clientVersion": "1.60.19",
+            "androidSdkVersion": 32,
             "hl": "en", "gl": "US",
         },
-        "userAgent": "com.google.android.apps.youtube.vr.oculus/1.71.26 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip",
+        "userAgent": "com.google.android.apps.youtube.vr.oculus/1.60.19 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip",
         "embedUrl": None,
+        "attestationRequest": None,
     },
-    # TVHTML5 with Cobalt UA (Google's official smart-TV browser) — no PoToken
+    # ANDROID_MUSIC — YouTube Music Android app, version from youtube-source AndroidMusic.java
     {
-        "name": "TVHTML5",
+        "name": "ANDROID_MUSIC",
         "ctx": {
-            "clientName": "TVHTML5",
-            "clientVersion": "7.20260114.12.00",
+            "clientName": "ANDROID_MUSIC",
+            "clientVersion": "7.27.52",
+            "androidSdkVersion": 30,
             "hl": "en", "gl": "US",
         },
-        "userAgent": "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/25.lts.30.1034943-gold (unlike Gecko) v8/9.0.2194.47-jit gles Starboard/13, Linux_x86_64 (Nintendo Switch)",
+        "userAgent": "com.google.android.apps.youtube.music/7.27.52 (Linux; U; Android 11) gzip",
         "embedUrl": None,
+        "attestationRequest": None,
     },
-    # IOS — kept as fallback
+    # IOS — fallback
     {
         "name": "IOS",
         "ctx": {
@@ -53,17 +63,7 @@ _PLAYER_CLIENTS = [
         },
         "userAgent": "com.google.ios.youtube/21.03.1 (iPhone16,2; U; CPU iOS 18_2 like Mac OS X;)",
         "embedUrl": None,
-    },
-    # TVHTML5_SIMPLY_EMBEDDED_PLAYER — kept as last resort
-    {
-        "name": "TVHTML5_SIMPLY_EMBEDDED_PLAYER",
-        "ctx": {
-            "clientName": "TVHTML5_SIMPLY_EMBEDDED_PLAYER",
-            "clientVersion": "2.0",
-            "hl": "en", "gl": "US",
-        },
-        "userAgent": "Mozilla/5.0 (PlayStation; PlayStation 4/12.02) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.4 Safari/605.1.15",
-        "embedUrl": "https://www.youtube.com/",
+        "attestationRequest": None,
     },
 ]
 
@@ -181,8 +181,10 @@ async def _try_client(video_id: str, client: dict) -> tuple[tuple | None, str]:
         "contentCheckOk": True,
         "racyCheckOk": True,
     }
-    if client["embedUrl"]:
+    if client.get("embedUrl"):
         body["context"]["thirdParty"] = {"embedUrl": client["embedUrl"]}
+    if client.get("attestationRequest"):
+        body["attestationRequest"] = client["attestationRequest"]
 
     headers = {
         "Content-Type": "application/json",
