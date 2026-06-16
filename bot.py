@@ -645,8 +645,9 @@ async def rps(interaction: discord.Interaction, choice: app_commands.Choice[str]
 @app_commands.describe(message="The message to send")
 @app_commands.checks.has_any_role("DM", "puppet ppl")
 async def speak(interaction: discord.Interaction, message: str):
-    await interaction.response.defer(ephemeral=True, thinking=False)
+    await interaction.response.defer(ephemeral=True)
     await interaction.channel.send(message)
+    await interaction.delete_original_response()
 
 @speak.error
 async def speak_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
