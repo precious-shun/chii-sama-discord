@@ -1564,6 +1564,7 @@ def _quest_announcement(emoji: str, name: str) -> str:
     quest_type="Main quest or side quest",
     name="Quest name",
     objective="Objectives — separate each with a period (e.g. Go here. Do this. Return.)",
+    description="Optional quest description shown beneath the title",
 )
 @app_commands.choices(quest_type=_QUEST_TYPE_CHOICES)
 @app_commands.checks.has_any_role("DM", "puppet ppl")
@@ -1572,6 +1573,7 @@ async def createquest(
     quest_type: app_commands.Choice[str],
     name: str,
     objective: str,
+    description: str | None = None,
 ):
     await interaction.response.defer()
     objectives = [o.strip() + "." for o in objective.rstrip(".").split(".") if o.strip()]
@@ -1585,8 +1587,9 @@ async def createquest(
         if journal_channel:
             check_pins = discord.utils.get(interaction.guild.emojis, name="CheckPins")
             pin_str = str(check_pins) if check_pins else "📌"
-            obj_text = "\n".join(f"☐ {o}" for o in objectives)
-            msg = await journal_channel.send(f"# {pin_str} Main Quest: ~| {name} |~\n\n{obj_text}")
+            obj_text = "\n".join(f"**- ☐ {o}**" for o in objectives)
+            desc_block = f"\n```{description}```\n" if description else "\n"
+            msg = await journal_channel.send(f"# {pin_str} Main Quest: ~| {name} |~\n{desc_block}\n{obj_text}")
             database.set_main_quest_message_id(quest_id, msg.id)
     else:
         ok = database.add_side_quest(interaction.guild_id, objective.strip())
