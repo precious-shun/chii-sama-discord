@@ -731,7 +731,7 @@ class RollButton(discord.ui.Button):
         nat_vals = {1, sides}
 
         def fmt_die(value: int, kept: bool) -> str:
-            bold = kept or value in nat_vals
+            bold = value in nat_vals
             inner = f"**{value}**" if bold else str(value)
             return inner if kept else f"~~{inner}~~"
 
@@ -752,23 +752,25 @@ class RollButton(discord.ui.Button):
         else:
             roll = random.randint(1, sides)
             is_nat = roll in nat_vals
-            roll_disp = f"**{roll}**" if (modifier == 0 or is_nat) else str(roll)
+            roll_disp = f"**{roll}**" if is_nat else str(roll)
             base_text = f"1d{sides} ({roll_disp})"
             mode_tag = ""
 
+        is_crit = roll in nat_vals
         total = roll + modifier
+        total_disp = f"**{total}**" if is_crit else str(total)
         if is_composite and composite_mods:
             parts = " ".join(
                 f"+{m} ({l})" if m > 0 else f"{m} ({l})" if m < 0 else f"+0 ({l})"
                 for m, l in composite_mods
             )
-            roll_text = f"{base_text} {parts} = **{total}**"
+            roll_text = f"{base_text} {parts} = {total_disp}"
         elif modifier > 0:
-            roll_text = f"{base_text} + {modifier} = **{total}**"
+            roll_text = f"{base_text} + {modifier} = {total_disp}"
         elif modifier < 0:
-            roll_text = f"{base_text} - {abs(modifier)} = **{total}**"
+            roll_text = f"{base_text} - {abs(modifier)} = {total_disp}"
         else:
-            roll_text = f"{base_text} = **{roll}**"
+            roll_text = f"{base_text} = {total_disp}"
 
         embed = discord.Embed(
             title=f"{display_name} makes a {_check_label(self.check_type)}{mode_tag}!",
