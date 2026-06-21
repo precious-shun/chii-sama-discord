@@ -1449,7 +1449,7 @@ async def setcampaign_error(interaction: discord.Interaction, error: app_command
 
 def fetch_urban_sync(term: str, page: int = 1) -> dict | str:
     encoded = urllib.request.quote(term)
-    url = f"https://www.unofficialurbandictionaryapi.com/api/search?term={encoded}&page={page}"
+    url = f"https://unofficialurbandictionaryapi.com/api/search?term={encoded}&page={page}"
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
@@ -1460,13 +1460,15 @@ def fetch_urban_sync(term: str, page: int = 1) -> dict | str:
         return str(e)
 
 
+def _clean(s: str) -> str:
+    return s.encode("latin-1", errors="replace").decode("utf-8", errors="ignore").strip()
+
+
 def build_urban_embed(entry: dict, term: str, index: int, total: int, page: int) -> discord.Embed:
-    word = entry.get("word") or term
-    meaning = entry.get("meaning") or entry.get("definition") or "No definition."
-    example = entry.get("example") or ""
-    contributor = entry.get("contributor") or entry.get("author") or ""
-    thumbs_up = entry.get("thumbsUp") or entry.get("thumbs_up") or 0
-    thumbs_down = entry.get("thumbsDown") or entry.get("thumbs_down") or 0
+    word = _clean(entry.get("word") or term)
+    meaning = _clean(entry.get("meaning") or entry.get("definition") or "No definition.")
+    example = _clean(entry.get("example") or "")
+    contributor = _clean(entry.get("contributor") or "")
 
     meaning = meaning[:1024] if len(meaning) > 1024 else meaning
     example = example[:1024] if len(example) > 1024 else example
@@ -1482,8 +1484,6 @@ def build_urban_embed(entry: dict, term: str, index: int, total: int, page: int)
     footer_parts = [f"Result {index + 1}/{total} (page {page})"]
     if contributor:
         footer_parts.append(f"by {contributor}")
-    if thumbs_up or thumbs_down:
-        footer_parts.append(f"👍 {thumbs_up}  👎 {thumbs_down}")
     embed.set_footer(text="  |  ".join(footer_parts))
     return embed
 
