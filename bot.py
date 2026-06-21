@@ -1833,6 +1833,57 @@ async def updatequest_error(interaction: discord.Interaction, error: app_command
         await interaction.response.send_message("You don't have permission to use this.", ephemeral=True)
 
 
+@bot.tree.command(name="footnote", description="Add a footnote to a main quest in the journal")
+@app_commands.describe(
+    name="The quest to add a footnote to",
+    footnote="Your character's footnote",
+)
+async def footnote_cmd(interaction: discord.Interaction, name: str, footnote: str):
+    await interaction.response.defer(ephemeral=True)
+    quests = database.get_main_quest_names(interaction.guild_id)
+    match = next(((qid, qname) for qid, qname in quests if qname == name), None)
+    if not match:
+        await interaction.followup.send("Quest not found.", ephemeral=True)
+        return
+    quest_id, _ = match
+    quest_detail = database.get_main_quest_detail(quest_id)
+    if not quest_detail or not quest_detail["channel_message_id"]:
+        await interaction.followup.send("No journal message found for that quest.", ephemeral=True)
+        return
+
+    char_name = interaction.user.display_name
+    char_id = database.get_character_id(interaction.user.id)
+    if char_id:
+        char_data = await asyncio.get_event_loop().run_in_executor(
+            None, lambda: fetch_character_sync(char_id)
+        )
+        if isinstance(char_data, dict):
+            fetched_name = (char_data.get("data") or {}).get("name")
+            if fetched_name:
+                char_name = fetched_name
+
+    database.save_footnote(quest_id, char_name, footnote.strip())
+
+    journal_channel = discord.utils.get(interaction.guild.text_channels, name=QUEST_JOURNAL_CHANNEL)
+    if journal_channel:
+        try:
+            msg = await journal_channel.fetch_message(quest_detail["channel_message_id"])
+            await msg.edit(content=msg.content + f'\n-# "{footnote.strip()}" — {char_name}')
+        except Exception as e:
+            print(f"[footnote] Failed to edit journal message: {e}")
+
+    await interaction.followup.send("Footnote added.", ephemeral=True)
+
+@footnote_cmd.autocomplete("name")
+async def footnote_name_autocomplete(
+    interaction: discord.Interaction, current: str
+) -> list[app_commands.Choice[str]]:
+    quests = database.get_main_quest_names(interaction.guild_id)
+    options = [qname for _, qname in quests]
+    filtered = [q for q in options if current.lower() in q.lower()] if current else options
+    return [app_commands.Choice(name=q[:100], value=q) for q in filtered[:25]]
+
+
 @bot.tree.command(name="deletequest", description="Delete a quest from the journal")
 @app_commands.describe(
     quest_type="Main quest or side quest",
