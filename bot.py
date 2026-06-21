@@ -1559,6 +1559,13 @@ def _quest_announcement(emoji: str, name: str) -> str:
     )
 
 
+def _quest_completion_announcement(emoji: str, name: str) -> str:
+    return (
+        f"# ✦ QUEST COMPLETED ✦\n"
+        f"# {emoji}《 {name} 》{emoji}"
+    )
+
+
 class QuestFootnoteModal(discord.ui.Modal, title="Quest Footnote"):
     footnote = discord.ui.TextInput(
         label="Enter Character Footnote",
@@ -1770,6 +1777,17 @@ async def updatequest(
                 await msg.edit(content=new_content)
             except Exception as e:
                 print(f"[updatequest] Failed to edit journal message: {e}")
+
+    quest_name = quest_detail["name"] if quest_detail else name
+    if status.value in ("completed", "failed"):
+        status_word = status.name
+        obj_label = objective if objective else "All objectives"
+        await interaction.channel.send(f"**{quest_name}**: {obj_label} — **{status_word}**")
+
+        all_completed = all(s == "completed" for _, _, s in updated_objectives)
+        if all_completed:
+            emoji = await _pick_quest_emoji(quest_name)
+            await interaction.channel.send(_quest_completion_announcement(emoji, quest_name))
 
     await interaction.followup.send("Quest updated.", ephemeral=True)
 
