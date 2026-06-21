@@ -1574,11 +1574,12 @@ class QuestFootnoteModal(discord.ui.Modal, title="Quest Footnote"):
         max_length=300,
     )
 
-    def __init__(self, quest_id: int, journal_channel_id: int, journal_message_id: int):
+    def __init__(self, quest_id: int, journal_channel_id: int, journal_message_id: int, suffix: str = ""):
         super().__init__()
         self.quest_id = quest_id
         self.journal_channel_id = journal_channel_id
         self.journal_message_id = journal_message_id
+        self.suffix = suffix
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
@@ -1598,18 +1599,19 @@ class QuestFootnoteModal(discord.ui.Modal, title="Quest Footnote"):
             journal_channel = interaction.guild.get_channel(self.journal_channel_id)
             if journal_channel:
                 msg = await journal_channel.fetch_message(self.journal_message_id)
-                await msg.edit(content=msg.content + f'\n-# "{footnote_text}" — {char_name}')
+                await msg.edit(content=msg.content + f'\n-# "{footnote_text}" — {char_name}{self.suffix}')
         except Exception as e:
             print(f"[Footnote] Failed to edit journal message: {e}")
         await interaction.followup.send("Footnote added.", ephemeral=True)
 
 
 class QuestFootnoteView(discord.ui.View):
-    def __init__(self, quest_id: int, journal_channel_id: int | None, journal_message_id: int | None):
+    def __init__(self, quest_id: int, journal_channel_id: int | None, journal_message_id: int | None, suffix: str = ""):
         super().__init__(timeout=60)
         self.quest_id = quest_id
         self.journal_channel_id = journal_channel_id
         self.journal_message_id = journal_message_id
+        self.suffix = suffix
         self.message: discord.Message | None = None
 
     async def on_timeout(self):
@@ -1622,7 +1624,7 @@ class QuestFootnoteView(discord.ui.View):
             await interaction.response.send_message("No journal message linked to this quest.", ephemeral=True)
             return
         await interaction.response.send_modal(
-            QuestFootnoteModal(self.quest_id, self.journal_channel_id, self.journal_message_id)
+            QuestFootnoteModal(self.quest_id, self.journal_channel_id, self.journal_message_id, self.suffix)
         )
 
 
@@ -1765,18 +1767,20 @@ async def updatequest(
     updated_objectives = database.get_objectives_for_quest(quest_id)
     footnotes = database.get_footnotes_for_quest(quest_id)
 
-    if quest_detail and quest_detail["channel_message_id"]:
-        journal_channel = discord.utils.get(interaction.guild.text_channels, name=QUEST_JOURNAL_CHANNEL)
-        if journal_channel:
-            try:
-                msg = await journal_channel.fetch_message(quest_detail["channel_message_id"])
-                new_content = _build_quest_channel_message(
-                    interaction.guild, quest_detail["name"], quest_detail["description"],
-                    updated_objectives, footnotes,
-                )
-                await msg.edit(content=new_content)
-            except Exception as e:
-                print(f"[updatequest] Failed to edit journal message: {e}")
+    journal_channel = discord.utils.get(interaction.guild.text_channels, name=QUEST_JOURNAL_CHANNEL)
+    journal_channel_id = journal_channel.id if journal_channel else None
+    quest_msg_id = quest_detail["channel_message_id"] if quest_detail else None
+
+    if quest_detail and quest_msg_id and journal_channel:
+        try:
+            msg = await journal_channel.fetch_message(quest_msg_id)
+            new_content = _build_quest_channel_message(
+                interaction.guild, quest_detail["name"], quest_detail["description"],
+                updated_objectives, footnotes,
+            )
+            await msg.edit(content=new_content)
+        except Exception as e:
+            print(f"[updatequest] Failed to edit journal message: {e}")
 
     quest_name = quest_detail["name"] if quest_detail else name
     if status.value in ("completed", "failed"):
@@ -1787,7 +1791,9 @@ async def updatequest(
         all_completed = all(s == "completed" for _, _, s in updated_objectives)
         if all_completed:
             emoji = await _pick_quest_emoji(quest_name)
-            await interaction.channel.send(_quest_completion_announcement(emoji, quest_name))
+            view = QuestFootnoteView(quest_id, journal_channel_id, quest_msg_id, suffix=" (Quest Completed)")
+            completion_msg = await interaction.channel.send(_quest_completion_announcement(emoji, quest_name), view=view)
+            view.message = completion_msg
 
     await interaction.followup.send("Quest updated.", ephemeral=True)
 
