@@ -1504,7 +1504,7 @@ def build_urban_embed(entry: dict, index: int, total: int) -> discord.Embed:
 
 class UrbanView(discord.ui.View):
     def __init__(self, entries: list):
-        super().__init__(timeout=120)
+        super().__init__(timeout=60)
         self.entries = entries
         self.index = 0
         self.message: discord.Message | None = None
