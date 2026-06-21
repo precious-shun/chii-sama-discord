@@ -1540,26 +1540,26 @@ _QUEST_TYPE_CHOICES = [
     app_commands.Choice(name="Side Quest", value="side"),
 ]
 
-def _quest_announcement(quest_type: str, name: str, objectives: list[str]) -> str:
+async def _pick_quest_emoji(name: str) -> str:
+    try:
+        result = await generate(
+            f"Given this quest title: \"{name}\"\n"
+            f"Reply with exactly ONE emoji that best fits the theme or mood of this quest title. "
+            f"Just the emoji character itself, nothing else."
+        )
+        return result.strip().split()[0]
+    except Exception:
+        return "📜"
+
+
+def _quest_announcement(emoji: str, name: str, objectives: list[str]) -> str:
     obj_lines = "\n".join(f"> ☐ {obj}" for obj in objectives)
-    if quest_type == "main":
-        type_label = "⚔️  Main Quest"
-        flavor = "*A new challenge has been entered into the journal. Steel yourselves.*"
-    else:
-        type_label = "📋  Side Quest"
-        flavor = "*A new task has been noted. Handle it when you can.*"
     return (
-        f"**✦ ─────────────────────── ✦**\n"
-        f"## 📜 Quest Added to Journal\n"
-        f"**✦ ─────────────────────── ✦**\n"
-        f"\n"
-        f"**{type_label}**\n"
-        f"# {name}\n"
+        f"# ✦ QUEST STARTED ✦\n"
+        f"# {emoji}《 {name} 》{emoji}\n"
         f"\n"
         f"**Objectives:**\n"
-        f"{obj_lines}\n"
-        f"\n"
-        f"> {flavor}"
+        f"{obj_lines}"
     )
 
 
@@ -1596,7 +1596,8 @@ async def createquest(
             await interaction.followup.send("No active campaign found. Set one up first.", ephemeral=True)
             return
 
-    await interaction.followup.send(_quest_announcement(quest_type.value, name, objectives))
+    emoji = await _pick_quest_emoji(name)
+    await interaction.followup.send(_quest_announcement(emoji, name, objectives))
 
 @createquest.error
 async def createquest_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
