@@ -1447,72 +1447,84 @@ async def setcampaign_error(interaction: discord.Interaction, error: app_command
         await interaction.response.send_message("You don't have permission to use this.", ephemeral=True)
 
 
-def fetch_urban_sync(term: str, page: int = 1) -> dict | str:
+def fetch_urban_sync(term: str) -> list | str:
     encoded = urllib.request.quote(term)
-    url = f"https://unofficialurbandictionaryapi.com/api/search?term={encoded}&page={page}"
+    url = f"https://api.urbandictionary.com/v0/define?term={encoded}"
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
-            return json.loads(resp.read())
+            data = json.loads(resp.read())
+        entries = data.get("list") or []
+        entries.sort(key=lambda e: e.get("thumbs_up", 0), reverse=True)
+        return entries
     except urllib.error.HTTPError as e:
         return f"HTTP {e.code}: {e.read().decode()}"
     except Exception as e:
         return str(e)
 
 
-def _clean(s: str) -> str:
-    return s.encode("latin-1", errors="replace").decode("utf-8", errors="ignore").strip()
+def _ud_clean(s: str) -> str:
+    return re.sub(r'\[([^\]]+)\]', r'\1', s).strip()
 
 
-def build_urban_embed(entry: dict, term: str, index: int, total: int, page: int) -> discord.Embed:
-    word = _clean(entry.get("word") or term)
-    meaning = _clean(entry.get("meaning") or entry.get("definition") or "No definition.")
-    example = _clean(entry.get("example") or "")
-    contributor = _clean(entry.get("contributor") or "")
+def build_urban_embed(entry: dict, index: int, total: int) -> discord.Embed:
+    word = entry.get("word", "")
+    definition = _ud_clean(entry.get("definition") or "No definition.")
+    example = _ud_clean(entry.get("example") or "")
+    author = entry.get("author") or ""
+    thumbs_up = entry.get("thumbs_up", 0)
+    thumbs_down = entry.get("thumbs_down", 0)
+    permalink = entry.get("permalink") or ""
+    written_on = entry.get("written_on") or ""
 
-    meaning = meaning[:1024] if len(meaning) > 1024 else meaning
+    definition = definition[:4096] if len(definition) > 4096 else definition
     example = example[:1024] if len(example) > 1024 else example
 
     embed = discord.Embed(
         title=word,
-        url=f"https://www.urbandictionary.com/define.php?term={urllib.request.quote(term)}",
-        description=meaning,
-        color=0x1D2439,
+        url=permalink or discord.Embed.Empty,
+        description=definition,
+        color=0xFFB7C5,
     )
     if example:
         embed.add_field(name="Example", value=example, inline=False)
-    footer_parts = [f"Result {index + 1}/{total} (page {page})"]
-    if contributor:
-        footer_parts.append(f"by {contributor}")
+    embed.add_field(name="Votes", value=f"👍 {thumbs_up}  👎 {thumbs_down}", inline=True)
+    if written_on:
+        try:
+            date_str = datetime.fromisoformat(written_on.replace("Z", "+00:00")).strftime("%b %d, %Y")
+        except Exception:
+            date_str = written_on[:10]
+        embed.add_field(name="Written", value=date_str, inline=True)
+    footer_parts = [f"Result {index + 1} of {total}"]
+    if author:
+        footer_parts.append(f"by {author}")
     embed.set_footer(text="  |  ".join(footer_parts))
     return embed
 
 
 class UrbanView(discord.ui.View):
-    def __init__(self, term: str, entries: list, page: int):
+    def __init__(self, entries: list):
         super().__init__(timeout=120)
-        self.term = term
         self.entries = entries
-        self.page = page
         self.index = 0
+        self._update_buttons()
 
-    @discord.ui.button(label="Next", style=discord.ButtonStyle.secondary)
+    def _update_buttons(self):
+        self.prev_button.disabled = self.index == 0
+        # Next is never disabled — wraps around
+
+    @discord.ui.button(label="◀ Prev", style=discord.ButtonStyle.secondary)
+    async def prev_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.index = (self.index - 1) % len(self.entries)
+        self._update_buttons()
+        embed = build_urban_embed(self.entries[self.index], self.index, len(self.entries))
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    @discord.ui.button(label="Next ▶", style=discord.ButtonStyle.secondary)
     async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.index += 1
-
-        if self.index >= len(self.entries):
-            result = await asyncio.get_event_loop().run_in_executor(
-                None, lambda: fetch_urban_sync(self.term, self.page + 1)
-            )
-            if isinstance(result, str) or not (result.get("data") or []):
-                button.disabled = True
-                await interaction.response.edit_message(view=self)
-                return
-            self.page += 1
-            self.entries = result.get("data") or []
-            self.index = 0
-
-        embed = build_urban_embed(self.entries[self.index], self.term, self.index, len(self.entries), self.page)
+        self.index = (self.index + 1) % len(self.entries)
+        self._update_buttons()
+        embed = build_urban_embed(self.entries[self.index], self.index, len(self.entries))
         await interaction.response.edit_message(embed=embed, view=self)
 
 
@@ -1520,20 +1532,18 @@ class UrbanView(discord.ui.View):
 @app_commands.describe(term="The term to search for")
 async def urban(interaction: discord.Interaction, term: str):
     await interaction.response.defer()
-    result = await asyncio.get_event_loop().run_in_executor(
+    entries = await asyncio.get_event_loop().run_in_executor(
         None, lambda: fetch_urban_sync(term)
     )
-    if isinstance(result, str):
-        await interaction.followup.send(f"Failed to fetch: {result}", ephemeral=True)
+    if isinstance(entries, str):
+        await interaction.followup.send(f"Failed to fetch: {entries}", ephemeral=True)
         return
-
-    entries = result.get("data") or []
     if not entries:
         await interaction.followup.send(f'No results found for **{term}**.', ephemeral=True)
         return
 
-    embed = build_urban_embed(entries[0], term, 0, len(entries), 1)
-    view = UrbanView(term, entries, page=1)
+    embed = build_urban_embed(entries[0], 0, len(entries))
+    view = UrbanView(entries)
     await interaction.followup.send(embed=embed, view=view)
 
 
