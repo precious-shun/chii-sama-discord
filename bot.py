@@ -1533,6 +1533,51 @@ async def questjournal(interaction: discord.Interaction):
         await interaction.channel.send(embed=discord.Embed(description=chunk, color=0xFFB7C5))
 
 
+QUEST_JOURNAL_CHANNEL = "newbies-quest-journal"
+
+_QUEST_TYPE_CHOICES = [
+    app_commands.Choice(name="Main Quest", value="main"),
+    app_commands.Choice(name="Side Quest", value="side"),
+]
+
+@bot.tree.command(name="createquest", description="Add a new quest to the journal")
+@app_commands.describe(
+    quest_type="Main quest or side quest",
+    name="Quest name",
+    objective="First objective for this quest",
+)
+@app_commands.choices(quest_type=_QUEST_TYPE_CHOICES)
+@app_commands.checks.has_any_role("DM", "puppet ppl")
+async def createquest(
+    interaction: discord.Interaction,
+    quest_type: app_commands.Choice[str],
+    name: str,
+    objective: str,
+):
+    await interaction.response.defer(ephemeral=True)
+
+    if quest_type.value == "main":
+        ok = database.add_main_quest(interaction.guild_id, name, objective)
+    else:
+        ok = database.add_side_quest(interaction.guild_id, objective)
+
+    if not ok:
+        await interaction.followup.send("No active campaign found. Set one up first.", ephemeral=True)
+        return
+
+    await interaction.followup.send(f"Quest **{name}** added to journal!", ephemeral=True)
+
+    if quest_type.value == "main":
+        journal_channel = discord.utils.get(interaction.guild.text_channels, name=QUEST_JOURNAL_CHANNEL)
+        if journal_channel:
+            await journal_channel.send(f"# {name}\n\n☐ {objective}")
+
+@createquest.error
+async def createquest_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    if isinstance(error, app_commands.MissingAnyRole):
+        await interaction.response.send_message("You don't have permission to use this.", ephemeral=True)
+
+
 def fetch_urban_sync(term: str) -> list | str:
     encoded = urllib.request.quote(term)
     url = f"https://api.urbandictionary.com/v0/define?term={encoded}"

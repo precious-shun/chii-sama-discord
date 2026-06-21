@@ -283,6 +283,45 @@ def get_quest_journal(guild_id: int) -> dict | None:
     }
 
 
+def add_main_quest(guild_id: int, name: str, objective: str) -> bool:
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT id FROM qj_campaigns WHERE guild_id = ? ORDER BY id DESC LIMIT 1", (guild_id,))
+    row = c.fetchone()
+    if not row:
+        conn.close()
+        return False
+    campaign_id = row[0]
+    c.execute("SELECT COALESCE(MAX(sort_order), -1) + 1 FROM qj_main_quests WHERE campaign_id = ?", (campaign_id,))
+    sort_order = c.fetchone()[0]
+    c.execute("INSERT INTO qj_main_quests (campaign_id, name, sort_order) VALUES (?, ?, ?)",
+              (campaign_id, name, sort_order))
+    mq_id = c.lastrowid
+    c.execute("INSERT INTO qj_objectives (main_quest_id, text, state, sort_order) VALUES (?, ?, 'ongoing', 0)",
+              (mq_id, objective))
+    conn.commit()
+    conn.close()
+    return True
+
+
+def add_side_quest(guild_id: int, text: str) -> bool:
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT id FROM qj_campaigns WHERE guild_id = ? ORDER BY id DESC LIMIT 1", (guild_id,))
+    row = c.fetchone()
+    if not row:
+        conn.close()
+        return False
+    campaign_id = row[0]
+    c.execute("SELECT COALESCE(MAX(sort_order), -1) + 1 FROM qj_side_quests WHERE campaign_id = ?", (campaign_id,))
+    sort_order = c.fetchone()[0]
+    c.execute("INSERT INTO qj_side_quests (campaign_id, text, state, sort_order) VALUES (?, ?, 'ongoing', ?)",
+              (campaign_id, text, sort_order))
+    conn.commit()
+    conn.close()
+    return True
+
+
 def get_leaderboard() -> list:
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
