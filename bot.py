@@ -1504,14 +1504,18 @@ def build_urban_embed(entry: dict, index: int, total: int) -> discord.Embed:
 
 class UrbanView(discord.ui.View):
     def __init__(self, entries: list):
-        super().__init__(timeout=120)
+        super().__init__(timeout=60)
         self.entries = entries
         self.index = 0
+        self.message: discord.Message | None = None
         self._update_buttons()
 
     def _update_buttons(self):
         self.prev_button.disabled = self.index == 0
-        # Next is never disabled — wraps around
+
+    async def on_timeout(self):
+        if self.message:
+            await self.message.edit(view=None)
 
     @discord.ui.button(label="◀ Prev", style=discord.ButtonStyle.secondary)
     async def prev_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -1544,7 +1548,8 @@ async def urban(interaction: discord.Interaction, term: str):
 
     embed = build_urban_embed(entries[0], 0, len(entries))
     view = UrbanView(entries)
-    await interaction.followup.send(embed=embed, view=view)
+    msg = await interaction.followup.send(embed=embed, view=view)
+    view.message = msg
 
 
 bot.run(DISCORD_TOKEN)
