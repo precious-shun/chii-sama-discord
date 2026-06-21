@@ -1447,4 +1447,63 @@ async def setcampaign_error(interaction: discord.Interaction, error: app_command
         await interaction.response.send_message("You don't have permission to use this.", ephemeral=True)
 
 
+def fetch_urban_sync(term: str) -> dict | str:
+    encoded = urllib.request.quote(term)
+    url = f"https://www.unofficialurbandictionaryapi.com/api/search?term={encoded}&page=1"
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        return f"HTTP {e.code}: {e.read().decode()}"
+    except Exception as e:
+        return str(e)
+
+
+@bot.tree.command(name="urban", description="Look up a term on Urban Dictionary")
+@app_commands.describe(term="The term to search for")
+async def urban(interaction: discord.Interaction, term: str):
+    await interaction.response.defer()
+    result = await asyncio.get_event_loop().run_in_executor(
+        None, lambda: fetch_urban_sync(term)
+    )
+    if isinstance(result, str):
+        await interaction.followup.send(f"Failed to fetch: {result}", ephemeral=True)
+        return
+
+    entries = result.get("data") or []
+    if not entries:
+        await interaction.followup.send(f'No results found for **{term}**.', ephemeral=True)
+        return
+
+    entry = entries[0]
+    word = entry.get("word") or term
+    meaning = entry.get("meaning") or entry.get("definition") or "No definition."
+    example = entry.get("example") or ""
+    contributor = entry.get("contributor") or entry.get("author") or ""
+    thumbs_up = entry.get("thumbsUp") or entry.get("thumbs_up") or 0
+    thumbs_down = entry.get("thumbsDown") or entry.get("thumbs_down") or 0
+
+    meaning = meaning[:1024] if len(meaning) > 1024 else meaning
+    example = example[:1024] if len(example) > 1024 else example
+
+    embed = discord.Embed(
+        title=word,
+        url=f"https://www.urbandictionary.com/define.php?term={urllib.request.quote(term)}",
+        description=meaning,
+        color=0x1D2439,
+    )
+    if example:
+        embed.add_field(name="Example", value=example, inline=False)
+    footer_parts = []
+    if contributor:
+        footer_parts.append(f"by {contributor}")
+    if thumbs_up or thumbs_down:
+        footer_parts.append(f"👍 {thumbs_up}  👎 {thumbs_down}")
+    if footer_parts:
+        embed.set_footer(text="  |  ".join(footer_parts))
+
+    await interaction.followup.send(embed=embed)
+
+
 bot.run(DISCORD_TOKEN)
