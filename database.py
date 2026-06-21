@@ -37,8 +37,95 @@ def init_db():
             campaign_name TEXT NOT NULL
         )
     """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS qj_campaigns (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guild_id INTEGER NOT NULL,
+            name TEXT NOT NULL
+        )
+    """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS qj_main_quests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            campaign_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            description TEXT,
+            sort_order INTEGER DEFAULT 0
+        )
+    """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS qj_objectives (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            main_quest_id INTEGER NOT NULL,
+            text TEXT NOT NULL,
+            state TEXT DEFAULT 'ongoing',
+            sort_order INTEGER DEFAULT 0
+        )
+    """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS qj_side_quests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            campaign_id INTEGER NOT NULL,
+            text TEXT NOT NULL,
+            state TEXT DEFAULT 'ongoing',
+            sort_order INTEGER DEFAULT 0
+        )
+    """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS qj_footnotes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            main_quest_id INTEGER NOT NULL,
+            character_name TEXT NOT NULL,
+            text TEXT NOT NULL,
+            sort_order INTEGER DEFAULT 0
+        )
+    """)
     conn.commit()
+    _seed_quest_data(conn)
     conn.close()
+
+
+def _seed_quest_data(conn):
+    c = conn.cursor()
+    GUILD_ID = 184915565511442432
+    c.execute("SELECT id FROM qj_campaigns WHERE guild_id = ?", (GUILD_ID,))
+    if c.fetchone():
+        return
+
+    c.execute("INSERT INTO qj_campaigns (guild_id, name) VALUES (?, ?)",
+              (GUILD_ID, "~ Both God and Mammon ~"))
+    campaign_id = c.lastrowid
+
+    c.execute("INSERT INTO qj_main_quests (campaign_id, name, sort_order) VALUES (?, ?, ?)",
+              (campaign_id, "~ Flawful Diamond ~", 0))
+    mq1 = c.lastrowid
+    c.execute("INSERT INTO qj_objectives (main_quest_id, text, state, sort_order) VALUES (?, ?, ?, ?)",
+              (mq1, "Go to Luna to find where the saintess is.", "ongoing", 0))
+
+    c.execute("INSERT INTO qj_main_quests (campaign_id, name, sort_order) VALUES (?, ?, ?)",
+              (campaign_id, "~ Astral Eye of the Sky-shouldering Bull ~", 1))
+    mq2 = c.lastrowid
+    for i, (text, state) in enumerate([
+        ("Find Enritzo Tonnuy.", "completed"),
+        ("Wait for Enritzo's letter.", "ongoing"),
+        ("Meet Enritzo in Nurnthrad.", "ongoing"),
+    ]):
+        c.execute("INSERT INTO qj_objectives (main_quest_id, text, state, sort_order) VALUES (?, ?, ?, ?)",
+                  (mq2, text, state, i))
+
+    side_quests = [
+        ("There have been troubles with the company and that they need some of our aid.", "ongoing"),
+        ("Some of our local supporters are being harassed by certain individuals of unknown origin.", "completed"),
+        ("We got invited by a noble to a fine dining.", "completed"),
+        ("We need to keep up the pressure, we are not lacking in money, but our presence need to spread outside of Lollyga.", "completed"),
+        ("There is a matter regarding Obelisk, apparently they are being held by press coverage, we can help them take care of it.", "ongoing"),
+        ("Recruit an accountant.", "ongoing"),
+    ]
+    for i, (text, state) in enumerate(side_quests):
+        c.execute("INSERT INTO qj_side_quests (campaign_id, text, state, sort_order) VALUES (?, ?, ?, ?)",
+                  (campaign_id, text, state, i))
+
+    conn.commit()
 
 
 def save_message(channel_id: int, user_id: int, user_name: str, role: str, content: str):
@@ -156,6 +243,44 @@ def get_campaign(guild_id: int) -> str | None:
     row = c.fetchone()
     conn.close()
     return row[0] if row else None
+
+
+def get_quest_journal(guild_id: int) -> dict | None:
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+
+    c.execute("SELECT id, name FROM qj_campaigns WHERE guild_id = ? ORDER BY id DESC LIMIT 1", (guild_id,))
+    row = c.fetchone()
+    if not row:
+        conn.close()
+        return None
+    campaign_id, campaign_name = row
+
+    c.execute("SELECT id, name, description FROM qj_main_quests WHERE campaign_id = ? ORDER BY sort_order", (campaign_id,))
+    main_quests_raw = c.fetchall()
+
+    main_quests = []
+    for mq_id, mq_name, mq_desc in main_quests_raw:
+        c.execute("SELECT text, state FROM qj_objectives WHERE main_quest_id = ? ORDER BY sort_order", (mq_id,))
+        objectives = c.fetchall()
+        c.execute("SELECT character_name, text FROM qj_footnotes WHERE main_quest_id = ? ORDER BY sort_order", (mq_id,))
+        footnotes = c.fetchall()
+        main_quests.append({
+            "name": mq_name,
+            "description": mq_desc,
+            "objectives": objectives,
+            "footnotes": footnotes,
+        })
+
+    c.execute("SELECT text, state FROM qj_side_quests WHERE campaign_id = ? ORDER BY sort_order", (campaign_id,))
+    side_quests = c.fetchall()
+
+    conn.close()
+    return {
+        "campaign": campaign_name,
+        "main_quests": main_quests,
+        "side_quests": side_quests,
+    }
 
 
 def get_leaderboard() -> list:

@@ -1447,6 +1447,72 @@ async def setcampaign_error(interaction: discord.Interaction, error: app_command
         await interaction.response.send_message("You don't have permission to use this.", ephemeral=True)
 
 
+def _obj_icon(state: str) -> str:
+    if state == "completed":
+        return "☑"
+    if state == "failed":
+        return "✘"
+    return "☐"
+
+
+@bot.tree.command(name="questjournal", description="Show the party's current quest journal")
+async def questjournal(interaction: discord.Interaction):
+    await interaction.response.defer()
+    journal = database.get_quest_journal(interaction.guild_id)
+    if not journal:
+        await interaction.followup.send("No quest journal found for this server.", ephemeral=True)
+        return
+
+    lines = [f"**Campaign: {journal['campaign']}**\n"]
+
+    for mq in journal["main_quests"]:
+        lines.append(f"**⚔️ Main Quest: {mq['name']}**")
+        if mq["description"]:
+            lines.append(f"```{mq['description']}```")
+        for text, state in mq["objectives"]:
+            icon = _obj_icon(state)
+            if state == "failed":
+                lines.append(f"{icon} ~~{text}~~")
+            elif state == "completed":
+                lines.append(f"{icon} {text}")
+            else:
+                lines.append(f"{icon} {text}")
+        if mq["footnotes"]:
+            lines.append("")
+            for char, note in mq["footnotes"]:
+                lines.append(f"> *\"{note}\"* — {char}")
+        lines.append("")
+
+    if journal["side_quests"]:
+        lines.append("**📋 Side Quests**")
+        for i, (text, state) in enumerate(journal["side_quests"], 1):
+            if state in ("completed", "failed"):
+                lines.append(f"{i}. ~~{text}~~")
+            else:
+                lines.append(f"{i}. {text}")
+
+    description = "\n".join(lines)
+    chunks = []
+    while description:
+        if len(description) <= 4096:
+            chunks.append(description)
+            break
+        split_at = description.rfind("\n", 0, 4096)
+        if split_at == -1:
+            split_at = 4096
+        chunks.append(description[:split_at])
+        description = description[split_at:].lstrip("\n")
+
+    first_embed = discord.Embed(
+        title="📖 Quest Journal",
+        description=chunks[0],
+        color=0xFFB7C5,
+    )
+    await interaction.followup.send(embed=first_embed)
+    for chunk in chunks[1:]:
+        await interaction.channel.send(embed=discord.Embed(description=chunk, color=0xFFB7C5))
+
+
 def fetch_urban_sync(term: str) -> list | str:
     encoded = urllib.request.quote(term)
     url = f"https://api.urbandictionary.com/v0/define?term={encoded}"
