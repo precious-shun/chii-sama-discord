@@ -344,7 +344,7 @@ def delete_side_quest(quest_id: int):
     conn.close()
 
 
-def add_main_quest(guild_id: int, name: str, objective: str) -> int | None:
+def add_main_quest(guild_id: int, name: str, objectives: list[str]) -> int | None:
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("SELECT id FROM qj_campaigns WHERE guild_id = ? ORDER BY id DESC LIMIT 1", (guild_id,))
@@ -358,8 +358,9 @@ def add_main_quest(guild_id: int, name: str, objective: str) -> int | None:
     c.execute("INSERT INTO qj_main_quests (campaign_id, name, sort_order) VALUES (?, ?, ?)",
               (campaign_id, name, sort_order))
     mq_id = c.lastrowid
-    c.execute("INSERT INTO qj_objectives (main_quest_id, text, state, sort_order) VALUES (?, ?, 'ongoing', 0)",
-              (mq_id, objective))
+    for i, obj in enumerate(objectives):
+        c.execute("INSERT INTO qj_objectives (main_quest_id, text, state, sort_order) VALUES (?, ?, 'ongoing', ?)",
+                  (mq_id, obj, i))
     conn.commit()
     conn.close()
     return mq_id

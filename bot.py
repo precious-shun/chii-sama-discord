@@ -1548,6 +1548,29 @@ _QUEST_TYPE_CHOICES = [
 )
 @app_commands.choices(quest_type=_QUEST_TYPE_CHOICES)
 @app_commands.checks.has_any_role("DM", "puppet ppl")
+def _quest_announcement(quest_type: str, name: str, objectives: list[str]) -> str:
+    obj_lines = "\n".join(f"> ☐ {obj}" for obj in objectives)
+    if quest_type == "main":
+        type_label = "⚔️  Main Quest"
+        flavor = "*A new challenge has been entered into the journal. Steel yourselves.*"
+    else:
+        type_label = "📋  Side Quest"
+        flavor = "*A new task has been noted. Handle it when you can.*"
+    return (
+        f"**✦ ─────────────────────── ✦**\n"
+        f"## 📜 Quest Added to Journal\n"
+        f"**✦ ─────────────────────── ✦**\n"
+        f"\n"
+        f"**{type_label}**\n"
+        f"# {name}\n"
+        f"\n"
+        f"**Objectives:**\n"
+        f"{obj_lines}\n"
+        f"\n"
+        f"> {flavor}"
+    )
+
+
 async def createquest(
     interaction: discord.Interaction,
     quest_type: app_commands.Choice[str],
@@ -1555,23 +1578,25 @@ async def createquest(
     objective: str,
 ):
     await interaction.response.defer()
+    objectives = [o.strip() for o in objective.split(";") if o.strip()]
 
     if quest_type.value == "main":
-        quest_id = database.add_main_quest(interaction.guild_id, name, objective)
+        quest_id = database.add_main_quest(interaction.guild_id, name, objectives)
         if quest_id is None:
             await interaction.followup.send("No active campaign found. Set one up first.", ephemeral=True)
             return
         journal_channel = discord.utils.get(interaction.guild.text_channels, name=QUEST_JOURNAL_CHANNEL)
         if journal_channel:
-            msg = await journal_channel.send(f"# {name}\n\n☐ {objective}")
+            obj_text = "\n".join(f"☐ {o}" for o in objectives)
+            msg = await journal_channel.send(f"# {name}\n\n{obj_text}")
             database.set_main_quest_message_id(quest_id, msg.id)
     else:
-        ok = database.add_side_quest(interaction.guild_id, objective)
+        ok = database.add_side_quest(interaction.guild_id, objective.strip())
         if not ok:
             await interaction.followup.send("No active campaign found. Set one up first.", ephemeral=True)
             return
 
-    await interaction.followup.send(f"# Quest Added to Journal: {name}")
+    await interaction.followup.send(_quest_announcement(quest_type.value, name, objectives))
 
 @createquest.error
 async def createquest_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
