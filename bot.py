@@ -1586,7 +1586,7 @@ async def createquest(
             check_pins = discord.utils.get(interaction.guild.emojis, name="CheckPins")
             pin_str = str(check_pins) if check_pins else "📌"
             obj_text = "\n".join(f"☐ {o}" for o in objectives)
-            msg = await journal_channel.send(f"{pin_str} Main Quest: ~| {name} |~\n\n{obj_text}")
+            msg = await journal_channel.send(f"# {pin_str} Main Quest: ~| {name} |~\n\n{obj_text}")
             database.set_main_quest_message_id(quest_id, msg.id)
     else:
         ok = database.add_side_quest(interaction.guild_id, objective.strip())
