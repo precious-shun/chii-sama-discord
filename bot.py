@@ -1552,14 +1552,10 @@ async def _pick_quest_emoji(name: str) -> str:
         return "📜"
 
 
-def _quest_announcement(emoji: str, name: str, objectives: list[str]) -> str:
-    obj_lines = "\n".join(f"> ☐ {obj}" for obj in objectives)
+def _quest_announcement(emoji: str, name: str) -> str:
     return (
         f"# ✦ QUEST STARTED ✦\n"
-        f"# {emoji}《 {name} 》{emoji}\n"
-        f"\n"
-        f"**Objectives:**\n"
-        f"{obj_lines}"
+        f"# {emoji}《 {name} 》{emoji}"
     )
 
 
@@ -1587,8 +1583,10 @@ async def createquest(
             return
         journal_channel = discord.utils.get(interaction.guild.text_channels, name=QUEST_JOURNAL_CHANNEL)
         if journal_channel:
+            check_pins = discord.utils.get(interaction.guild.emojis, name="CheckPins")
+            pin_str = str(check_pins) if check_pins else "📌"
             obj_text = "\n".join(f"☐ {o}" for o in objectives)
-            msg = await journal_channel.send(f"# {name}\n\n{obj_text}")
+            msg = await journal_channel.send(f"{pin_str} Main Quest: ~| {name} |~\n\n{obj_text}")
             database.set_main_quest_message_id(quest_id, msg.id)
     else:
         ok = database.add_side_quest(interaction.guild_id, objective.strip())
@@ -1597,7 +1595,7 @@ async def createquest(
             return
 
     emoji = await _pick_quest_emoji(name)
-    await interaction.followup.send(_quest_announcement(emoji, name, objectives))
+    await interaction.followup.send(_quest_announcement(emoji, name))
 
 @createquest.error
 async def createquest_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
