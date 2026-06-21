@@ -1590,7 +1590,7 @@ async def createquest(
             obj_text = "\n".join(f"**- ☐ {o}**" for o in objectives)
             parts = [f"# {pin_str} Main Quest: ~| {name} |~"]
             if description:
-                parts.append(f"```{description.replace('  ', chr(10))}```")
+                parts.append(f"```{description.replace(r'\n', chr(10))}```")
             parts.append(obj_text)
             msg = await journal_channel.send("\n".join(parts))
             database.set_main_quest_message_id(quest_id, msg.id)
