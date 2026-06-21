@@ -1587,7 +1587,7 @@ async def createquest(
         if journal_channel:
             check_pins = discord.utils.get(interaction.guild.emojis, name="CheckPins")
             pin_str = str(check_pins) if check_pins else "📌"
-            obj_text = "\n".join(f"**- ☐ {o}**" for o in objectives)
+            obj_text = "\n".join(f"- **☐ {o}**" for o in objectives)
             parts = [f"# {pin_str} Main Quest: ~| {name} |~"]
             if description:
                 parts.append(f"```{description.replace(r'\n', chr(10))}```")
