@@ -1546,8 +1546,6 @@ _QUEST_TYPE_CHOICES = [
     name="Quest name",
     objective="First objective for this quest",
 )
-@app_commands.choices(quest_type=_QUEST_TYPE_CHOICES)
-@app_commands.checks.has_any_role("DM", "puppet ppl")
 def _quest_announcement(quest_type: str, name: str, objectives: list[str]) -> str:
     obj_lines = "\n".join(f"> ☐ {obj}" for obj in objectives)
     if quest_type == "main":
@@ -1571,6 +1569,14 @@ def _quest_announcement(quest_type: str, name: str, objectives: list[str]) -> st
     )
 
 
+@bot.tree.command(name="createquest", description="Add a new quest to the journal")
+@app_commands.describe(
+    quest_type="Main quest or side quest",
+    name="Quest name",
+    objective="Objectives — separate each with a period (e.g. Go here. Do this. Return.)",
+)
+@app_commands.choices(quest_type=_QUEST_TYPE_CHOICES)
+@app_commands.checks.has_any_role("DM", "puppet ppl")
 async def createquest(
     interaction: discord.Interaction,
     quest_type: app_commands.Choice[str],
@@ -1578,7 +1584,7 @@ async def createquest(
     objective: str,
 ):
     await interaction.response.defer()
-    objectives = [o.strip() for o in objective.split(";") if o.strip()]
+    objectives = [o.strip() + "." for o in objective.rstrip(".").split(".") if o.strip()]
 
     if quest_type.value == "main":
         quest_id = database.add_main_quest(interaction.guild_id, name, objectives)
