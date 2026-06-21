@@ -1540,12 +1540,6 @@ _QUEST_TYPE_CHOICES = [
     app_commands.Choice(name="Side Quest", value="side"),
 ]
 
-@bot.tree.command(name="createquest", description="Add a new quest to the journal")
-@app_commands.describe(
-    quest_type="Main quest or side quest",
-    name="Quest name",
-    objective="First objective for this quest",
-)
 def _quest_announcement(quest_type: str, name: str, objectives: list[str]) -> str:
     obj_lines = "\n".join(f"> ☐ {obj}" for obj in objectives)
     if quest_type == "main":
