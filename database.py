@@ -395,6 +395,59 @@ def add_side_quest(guild_id: int, text: str) -> bool:
     return True
 
 
+def get_main_quest_detail(quest_id: int) -> dict | None:
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT name, description, channel_message_id FROM qj_main_quests WHERE id = ?", (quest_id,))
+    row = c.fetchone()
+    conn.close()
+    if not row:
+        return None
+    return {"name": row[0], "description": row[1], "channel_message_id": row[2]}
+
+
+def get_objectives_for_quest(main_quest_id: int) -> list[tuple[int, str, str]]:
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT id, text, state FROM qj_objectives WHERE main_quest_id = ? ORDER BY sort_order", (main_quest_id,))
+    rows = c.fetchall()
+    conn.close()
+    return rows
+
+
+def update_objective_state(objective_id: int, state: str):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("UPDATE qj_objectives SET state = ? WHERE id = ?", (state, objective_id))
+    conn.commit()
+    conn.close()
+
+
+def update_all_ongoing_objectives(main_quest_id: int, state: str):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("UPDATE qj_objectives SET state = ? WHERE main_quest_id = ? AND state = 'ongoing'", (state, main_quest_id))
+    conn.commit()
+    conn.close()
+
+
+def get_footnotes_for_quest(main_quest_id: int) -> list[tuple[str, str]]:
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT character_name, text FROM qj_footnotes WHERE main_quest_id = ? ORDER BY sort_order", (main_quest_id,))
+    rows = c.fetchall()
+    conn.close()
+    return rows
+
+
+def update_side_quest_state(quest_id: int, state: str):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("UPDATE qj_side_quests SET state = ? WHERE id = ?", (state, quest_id))
+    conn.commit()
+    conn.close()
+
+
 def get_leaderboard() -> list:
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()

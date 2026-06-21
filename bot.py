@@ -1463,7 +1463,7 @@ def _ansi_objectives(objectives: list) -> str:
         if state == "completed":
             lines.append(f"{_GREEN}☑{_RESET} {text}")
         elif state == "failed":
-            lines.append(f"{_RED}✘ {text}{_RESET}")
+            lines.append(f"{_RED}☒ {text}{_RESET}")
         else:
             lines.append(f"☐ {text}")
     return "```ansi\n" + "\n".join(lines) + "\n```"
@@ -1672,6 +1672,139 @@ async def createquest(
 
 @createquest.error
 async def createquest_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    if isinstance(error, app_commands.MissingAnyRole):
+        await interaction.response.send_message("You don't have permission to use this.", ephemeral=True)
+
+
+def _obj_checkbox(state: str) -> str:
+    if state == "completed":
+        return "☑"
+    if state == "failed":
+        return "☒"
+    return "☐"
+
+
+def _build_quest_channel_message(guild: discord.Guild, name: str, description: str | None,
+                                  objectives: list, footnotes: list) -> str:
+    all_done = all(state != "ongoing" for _, _, state in objectives)
+    if all_done:
+        pin_str = "✅"
+    else:
+        check_pins = discord.utils.get(guild.emojis, name="CheckPins")
+        pin_str = str(check_pins) if check_pins else "📌"
+    parts = [f"# {pin_str} Main Quest: ~| {name} |~"]
+    if description:
+        parts.append(f"```{description}```")
+    for _, text, state in objectives:
+        parts.append(f"- **{_obj_checkbox(state)} {text}**")
+    for char_name, footnote_text in footnotes:
+        parts.append(f'-# "{footnote_text}" — {char_name}')
+    return "\n".join(parts)
+
+
+_STATUS_CHOICES = [
+    app_commands.Choice(name="Completed", value="completed"),
+    app_commands.Choice(name="Failed", value="failed"),
+    app_commands.Choice(name="Ongoing", value="ongoing"),
+]
+
+
+@bot.tree.command(name="updatequest", description="Update the status of a quest or specific objective")
+@app_commands.describe(
+    quest_type="Main quest or side quest",
+    name="Quest to update",
+    status="New status to apply",
+    objective="Specific objective to update — leave empty to apply to all",
+)
+@app_commands.choices(quest_type=_QUEST_TYPE_CHOICES, status=_STATUS_CHOICES)
+@app_commands.checks.has_any_role("DM", "puppet ppl")
+async def updatequest(
+    interaction: discord.Interaction,
+    quest_type: app_commands.Choice[str],
+    name: str,
+    status: app_commands.Choice[str],
+    objective: str | None = None,
+):
+    await interaction.response.defer(ephemeral=True)
+
+    if quest_type.value == "side":
+        quests = database.get_side_quest_list(interaction.guild_id)
+        match = next(((qid, qtext) for qid, qtext in quests if qtext == name), None)
+        if not match:
+            await interaction.followup.send("Side quest not found.", ephemeral=True)
+            return
+        database.update_side_quest_state(match[0], status.value)
+        await interaction.followup.send(f"Side quest updated to **{status.name}**.", ephemeral=True)
+        return
+
+    quests = database.get_main_quest_names(interaction.guild_id)
+    match = next(((qid, qname) for qid, qname in quests if qname == name), None)
+    if not match:
+        await interaction.followup.send(f"Main quest **{name}** not found.", ephemeral=True)
+        return
+    quest_id, _ = match
+
+    if objective:
+        objectives = database.get_objectives_for_quest(quest_id)
+        obj_match = next(((oid, otext, ostate) for oid, otext, ostate in objectives if otext == objective), None)
+        if not obj_match:
+            await interaction.followup.send("Objective not found.", ephemeral=True)
+            return
+        database.update_objective_state(obj_match[0], status.value)
+    else:
+        database.update_all_ongoing_objectives(quest_id, status.value)
+
+    quest_detail = database.get_main_quest_detail(quest_id)
+    updated_objectives = database.get_objectives_for_quest(quest_id)
+    footnotes = database.get_footnotes_for_quest(quest_id)
+
+    if quest_detail and quest_detail["channel_message_id"]:
+        journal_channel = discord.utils.get(interaction.guild.text_channels, name=QUEST_JOURNAL_CHANNEL)
+        if journal_channel:
+            try:
+                msg = await journal_channel.fetch_message(quest_detail["channel_message_id"])
+                new_content = _build_quest_channel_message(
+                    interaction.guild, quest_detail["name"], quest_detail["description"],
+                    updated_objectives, footnotes,
+                )
+                await msg.edit(content=new_content)
+            except Exception as e:
+                print(f"[updatequest] Failed to edit journal message: {e}")
+
+    await interaction.followup.send("Quest updated.", ephemeral=True)
+
+@updatequest.autocomplete("name")
+async def updatequest_name_autocomplete(
+    interaction: discord.Interaction, current: str
+) -> list[app_commands.Choice[str]]:
+    quest_type = interaction.namespace.quest_type
+    if quest_type == "main":
+        quests = database.get_main_quest_names(interaction.guild_id)
+        options = [qname for _, qname in quests]
+    else:
+        quests = database.get_side_quest_list(interaction.guild_id)
+        options = [qtext for _, qtext in quests]
+    filtered = [q for q in options if current.lower() in q.lower()] if current else options
+    return [app_commands.Choice(name=q[:100], value=q) for q in filtered[:25]]
+
+@updatequest.autocomplete("objective")
+async def updatequest_objective_autocomplete(
+    interaction: discord.Interaction, current: str
+) -> list[app_commands.Choice[str]]:
+    quest_name = interaction.namespace.name
+    if not quest_name:
+        return []
+    quests = database.get_main_quest_names(interaction.guild_id)
+    match = next(((qid, qname) for qid, qname in quests if qname == quest_name), None)
+    if not match:
+        return []
+    objectives = database.get_objectives_for_quest(match[0])
+    options = [otext for _, otext, _ in objectives]
+    filtered = [o for o in options if current.lower() in o.lower()] if current else options
+    return [app_commands.Choice(name=o[:100], value=o) for o in filtered[:25]]
+
+@updatequest.error
+async def updatequest_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
     if isinstance(error, app_commands.MissingAnyRole):
         await interaction.response.send_message("You don't have permission to use this.", ephemeral=True)
 
