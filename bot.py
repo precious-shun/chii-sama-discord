@@ -1447,9 +1447,9 @@ async def setcampaign_error(interaction: discord.Interaction, error: app_command
         await interaction.response.send_message("You don't have permission to use this.", ephemeral=True)
 
 
-def fetch_urban_sync(term: str) -> dict | str:
+def fetch_urban_sync(term: str, page: int = 1) -> dict | str:
     encoded = urllib.request.quote(term)
-    url = f"https://www.unofficialurbandictionaryapi.com/api/search?term={encoded}&page=1"
+    url = f"https://www.unofficialurbandictionaryapi.com/api/search?term={encoded}&page={page}"
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
@@ -1460,23 +1460,7 @@ def fetch_urban_sync(term: str) -> dict | str:
         return str(e)
 
 
-@bot.tree.command(name="urban", description="Look up a term on Urban Dictionary")
-@app_commands.describe(term="The term to search for")
-async def urban(interaction: discord.Interaction, term: str):
-    await interaction.response.defer()
-    result = await asyncio.get_event_loop().run_in_executor(
-        None, lambda: fetch_urban_sync(term)
-    )
-    if isinstance(result, str):
-        await interaction.followup.send(f"Failed to fetch: {result}", ephemeral=True)
-        return
-
-    entries = result.get("data") or []
-    if not entries:
-        await interaction.followup.send(f'No results found for **{term}**.', ephemeral=True)
-        return
-
-    entry = entries[0]
+def build_urban_embed(entry: dict, term: str, index: int, total: int, page: int) -> discord.Embed:
     word = entry.get("word") or term
     meaning = entry.get("meaning") or entry.get("definition") or "No definition."
     example = entry.get("example") or ""
@@ -1495,15 +1479,62 @@ async def urban(interaction: discord.Interaction, term: str):
     )
     if example:
         embed.add_field(name="Example", value=example, inline=False)
-    footer_parts = []
+    footer_parts = [f"Result {index + 1}/{total} (page {page})"]
     if contributor:
         footer_parts.append(f"by {contributor}")
     if thumbs_up or thumbs_down:
         footer_parts.append(f"👍 {thumbs_up}  👎 {thumbs_down}")
-    if footer_parts:
-        embed.set_footer(text="  |  ".join(footer_parts))
+    embed.set_footer(text="  |  ".join(footer_parts))
+    return embed
 
-    await interaction.followup.send(embed=embed)
+
+class UrbanView(discord.ui.View):
+    def __init__(self, term: str, entries: list, page: int):
+        super().__init__(timeout=120)
+        self.term = term
+        self.entries = entries
+        self.page = page
+        self.index = 0
+
+    @discord.ui.button(label="Next", style=discord.ButtonStyle.secondary)
+    async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.index += 1
+
+        if self.index >= len(self.entries):
+            result = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: fetch_urban_sync(self.term, self.page + 1)
+            )
+            if isinstance(result, str) or not (result.get("data") or []):
+                button.disabled = True
+                await interaction.response.edit_message(view=self)
+                return
+            self.page += 1
+            self.entries = result.get("data") or []
+            self.index = 0
+
+        embed = build_urban_embed(self.entries[self.index], self.term, self.index, len(self.entries), self.page)
+        await interaction.response.edit_message(embed=embed, view=self)
+
+
+@bot.tree.command(name="urban", description="Look up a term on Urban Dictionary")
+@app_commands.describe(term="The term to search for")
+async def urban(interaction: discord.Interaction, term: str):
+    await interaction.response.defer()
+    result = await asyncio.get_event_loop().run_in_executor(
+        None, lambda: fetch_urban_sync(term)
+    )
+    if isinstance(result, str):
+        await interaction.followup.send(f"Failed to fetch: {result}", ephemeral=True)
+        return
+
+    entries = result.get("data") or []
+    if not entries:
+        await interaction.followup.send(f'No results found for **{term}**.', ephemeral=True)
+        return
+
+    embed = build_urban_embed(entries[0], term, 0, len(entries), 1)
+    view = UrbanView(term, entries, page=1)
+    await interaction.followup.send(embed=embed, view=view)
 
 
 bot.run(DISCORD_TOKEN)
