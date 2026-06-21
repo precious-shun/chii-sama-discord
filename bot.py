@@ -1554,7 +1554,7 @@ async def createquest(
     name: str,
     objective: str,
 ):
-    await interaction.response.defer(ephemeral=True)
+    await interaction.response.defer()
 
     if quest_type.value == "main":
         quest_id = database.add_main_quest(interaction.guild_id, name, objective)
@@ -1571,7 +1571,7 @@ async def createquest(
             await interaction.followup.send("No active campaign found. Set one up first.", ephemeral=True)
             return
 
-    await interaction.followup.send(f"Quest **{name}** added to journal!", ephemeral=True)
+    await interaction.followup.send(f"# Quest Added to Journal: {name}")
 
 @createquest.error
 async def createquest_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
