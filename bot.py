@@ -1559,6 +1559,66 @@ def _quest_announcement(emoji: str, name: str) -> str:
     )
 
 
+class QuestFootnoteModal(discord.ui.Modal, title="Quest Footnote"):
+    footnote = discord.ui.TextInput(
+        label="Enter Character Footnote",
+        style=discord.TextStyle.paragraph,
+        required=True,
+        max_length=300,
+    )
+
+    def __init__(self, quest_id: int, journal_channel_id: int, journal_message_id: int):
+        super().__init__()
+        self.quest_id = quest_id
+        self.journal_channel_id = journal_channel_id
+        self.journal_message_id = journal_message_id
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        footnote_text = self.footnote.value.strip()
+        char_name = interaction.user.display_name
+        char_id = database.get_character_id(interaction.user.id)
+        if char_id:
+            char_data = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: fetch_character_sync(char_id)
+            )
+            if isinstance(char_data, dict):
+                fetched_name = (char_data.get("data") or {}).get("name")
+                if fetched_name:
+                    char_name = fetched_name
+        database.save_footnote(self.quest_id, char_name, footnote_text)
+        try:
+            journal_channel = interaction.guild.get_channel(self.journal_channel_id)
+            if journal_channel:
+                msg = await journal_channel.fetch_message(self.journal_message_id)
+                await msg.edit(content=msg.content + f'\n-# "{footnote_text}" — {char_name}')
+        except Exception as e:
+            print(f"[Footnote] Failed to edit journal message: {e}")
+        await interaction.followup.send("Footnote added.", ephemeral=True)
+
+
+class QuestFootnoteView(discord.ui.View):
+    def __init__(self, quest_id: int, journal_channel_id: int | None, journal_message_id: int | None):
+        super().__init__(timeout=60)
+        self.quest_id = quest_id
+        self.journal_channel_id = journal_channel_id
+        self.journal_message_id = journal_message_id
+        self.message: discord.Message | None = None
+
+    async def on_timeout(self):
+        if self.message:
+            await self.message.edit(view=None)
+
+    @discord.ui.button(label="📝 Add Footnote", style=discord.ButtonStyle.secondary)
+    async def footnote_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not self.journal_channel_id or not self.journal_message_id:
+            await interaction.response.send_message("No journal message linked to this quest.", ephemeral=True)
+            return
+        await interaction.response.send_modal(
+            QuestFootnoteModal(self.quest_id, self.journal_channel_id, self.journal_message_id)
+        )
+
+
 @bot.tree.command(name="createquest", description="Add a new quest to the journal")
 @app_commands.describe(
     quest_type="Main quest or side quest",
@@ -1579,11 +1639,13 @@ async def createquest(
     objectives = [o.strip() + "." for o in objective.rstrip(".").split(".") if o.strip()]
 
     if quest_type.value == "main":
-        quest_id = database.add_main_quest(interaction.guild_id, name, objectives)
+        quest_id = database.add_main_quest(interaction.guild_id, name, objectives, description)
         if quest_id is None:
             await interaction.followup.send("No active campaign found. Set one up first.", ephemeral=True)
             return
         journal_channel = discord.utils.get(interaction.guild.text_channels, name=QUEST_JOURNAL_CHANNEL)
+        journal_channel_id = None
+        journal_message_id = None
         if journal_channel:
             check_pins = discord.utils.get(interaction.guild.emojis, name="CheckPins")
             pin_str = str(check_pins) if check_pins else "📌"
@@ -1594,14 +1656,19 @@ async def createquest(
             parts.append(obj_text)
             msg = await journal_channel.send("\n".join(parts))
             database.set_main_quest_message_id(quest_id, msg.id)
+            journal_channel_id = journal_channel.id
+            journal_message_id = msg.id
+        emoji = await _pick_quest_emoji(name)
+        view = QuestFootnoteView(quest_id, journal_channel_id, journal_message_id)
+        announcement = await interaction.followup.send(_quest_announcement(emoji, name), view=view)
+        view.message = announcement
     else:
         ok = database.add_side_quest(interaction.guild_id, objective.strip())
         if not ok:
             await interaction.followup.send("No active campaign found. Set one up first.", ephemeral=True)
             return
-
-    emoji = await _pick_quest_emoji(name)
-    await interaction.followup.send(_quest_announcement(emoji, name))
+        emoji = await _pick_quest_emoji(name)
+        await interaction.followup.send(_quest_announcement(emoji, name))
 
 @createquest.error
 async def createquest_error(interaction: discord.Interaction, error: app_commands.AppCommandError):

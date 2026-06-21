@@ -344,7 +344,7 @@ def delete_side_quest(quest_id: int):
     conn.close()
 
 
-def add_main_quest(guild_id: int, name: str, objectives: list[str]) -> int | None:
+def add_main_quest(guild_id: int, name: str, objectives: list[str], description: str | None = None) -> int | None:
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("SELECT id FROM qj_campaigns WHERE guild_id = ? ORDER BY id DESC LIMIT 1", (guild_id,))
@@ -355,8 +355,8 @@ def add_main_quest(guild_id: int, name: str, objectives: list[str]) -> int | Non
     campaign_id = row[0]
     c.execute("SELECT COALESCE(MAX(sort_order), -1) + 1 FROM qj_main_quests WHERE campaign_id = ?", (campaign_id,))
     sort_order = c.fetchone()[0]
-    c.execute("INSERT INTO qj_main_quests (campaign_id, name, sort_order) VALUES (?, ?, ?)",
-              (campaign_id, name, sort_order))
+    c.execute("INSERT INTO qj_main_quests (campaign_id, name, description, sort_order) VALUES (?, ?, ?, ?)",
+              (campaign_id, name, description, sort_order))
     mq_id = c.lastrowid
     for i, obj in enumerate(objectives):
         c.execute("INSERT INTO qj_objectives (main_quest_id, text, state, sort_order) VALUES (?, ?, 'ongoing', ?)",
@@ -364,6 +364,17 @@ def add_main_quest(guild_id: int, name: str, objectives: list[str]) -> int | Non
     conn.commit()
     conn.close()
     return mq_id
+
+
+def save_footnote(main_quest_id: int, character_name: str, text: str):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT COALESCE(MAX(sort_order), -1) + 1 FROM qj_footnotes WHERE main_quest_id = ?", (main_quest_id,))
+    sort_order = c.fetchone()[0]
+    c.execute("INSERT INTO qj_footnotes (main_quest_id, character_name, text, sort_order) VALUES (?, ?, ?, ?)",
+              (main_quest_id, character_name, text, sort_order))
+    conn.commit()
+    conn.close()
 
 
 def add_side_quest(guild_id: int, text: str) -> bool:
