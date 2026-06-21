@@ -1557,23 +1557,85 @@ async def createquest(
     await interaction.response.defer(ephemeral=True)
 
     if quest_type.value == "main":
-        ok = database.add_main_quest(interaction.guild_id, name, objective)
+        quest_id = database.add_main_quest(interaction.guild_id, name, objective)
+        if quest_id is None:
+            await interaction.followup.send("No active campaign found. Set one up first.", ephemeral=True)
+            return
+        journal_channel = discord.utils.get(interaction.guild.text_channels, name=QUEST_JOURNAL_CHANNEL)
+        if journal_channel:
+            msg = await journal_channel.send(f"# {name}\n\n☐ {objective}")
+            database.set_main_quest_message_id(quest_id, msg.id)
     else:
         ok = database.add_side_quest(interaction.guild_id, objective)
-
-    if not ok:
-        await interaction.followup.send("No active campaign found. Set one up first.", ephemeral=True)
-        return
+        if not ok:
+            await interaction.followup.send("No active campaign found. Set one up first.", ephemeral=True)
+            return
 
     await interaction.followup.send(f"Quest **{name}** added to journal!", ephemeral=True)
 
-    if quest_type.value == "main":
-        journal_channel = discord.utils.get(interaction.guild.text_channels, name=QUEST_JOURNAL_CHANNEL)
-        if journal_channel:
-            await journal_channel.send(f"# {name}\n\n☐ {objective}")
-
 @createquest.error
 async def createquest_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    if isinstance(error, app_commands.MissingAnyRole):
+        await interaction.response.send_message("You don't have permission to use this.", ephemeral=True)
+
+
+@bot.tree.command(name="deletequest", description="Delete a quest from the journal")
+@app_commands.describe(
+    quest_type="Main quest or side quest",
+    name="Quest to delete",
+)
+@app_commands.choices(quest_type=_QUEST_TYPE_CHOICES)
+@app_commands.checks.has_any_role("DM", "puppet ppl")
+async def deletequest(
+    interaction: discord.Interaction,
+    quest_type: app_commands.Choice[str],
+    name: str,
+):
+    await interaction.response.defer(ephemeral=True)
+
+    if quest_type.value == "main":
+        quests = database.get_main_quest_names(interaction.guild_id)
+        match = next(((qid, qname) for qid, qname in quests if qname == name), None)
+        if not match:
+            await interaction.followup.send(f"Main quest **{name}** not found.", ephemeral=True)
+            return
+        quest_id, quest_name = match
+        message_id = database.delete_main_quest(quest_id)
+        if message_id:
+            journal_channel = discord.utils.get(interaction.guild.text_channels, name=QUEST_JOURNAL_CHANNEL)
+            if journal_channel:
+                try:
+                    msg = await journal_channel.fetch_message(message_id)
+                    await msg.delete()
+                except Exception:
+                    pass
+    else:
+        quests = database.get_side_quest_list(interaction.guild_id)
+        match = next(((qid, qtext) for qid, qtext in quests if qtext == name), None)
+        if not match:
+            await interaction.followup.send(f"Side quest not found.", ephemeral=True)
+            return
+        quest_id, quest_name = match
+        database.delete_side_quest(quest_id)
+
+    await interaction.followup.send(f"Quest **{quest_name}** deleted.", ephemeral=True)
+
+@deletequest.autocomplete("name")
+async def deletequest_name_autocomplete(
+    interaction: discord.Interaction, current: str
+) -> list[app_commands.Choice[str]]:
+    quest_type = interaction.namespace.quest_type
+    if quest_type == "main":
+        quests = database.get_main_quest_names(interaction.guild_id)
+        options = [qname for _, qname in quests]
+    else:
+        quests = database.get_side_quest_list(interaction.guild_id)
+        options = [qtext for _, qtext in quests]
+    filtered = [q for q in options if current.lower() in q.lower()] if current else options
+    return [app_commands.Choice(name=q[:100], value=q) for q in filtered[:25]]
+
+@deletequest.error
+async def deletequest_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
     if isinstance(error, app_commands.MissingAnyRole):
         await interaction.response.send_message("You don't have permission to use this.", ephemeral=True)
 

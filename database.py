@@ -81,6 +81,11 @@ def init_db():
         )
     """)
     conn.commit()
+    try:
+        c.execute("ALTER TABLE qj_main_quests ADD COLUMN channel_message_id INTEGER")
+        conn.commit()
+    except Exception:
+        pass
     _seed_quest_data(conn)
     conn.close()
 
@@ -283,14 +288,70 @@ def get_quest_journal(guild_id: int) -> dict | None:
     }
 
 
-def add_main_quest(guild_id: int, name: str, objective: str) -> bool:
+def set_main_quest_message_id(quest_id: int, message_id: int):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("UPDATE qj_main_quests SET channel_message_id = ? WHERE id = ?", (message_id, quest_id))
+    conn.commit()
+    conn.close()
+
+
+def get_main_quest_names(guild_id: int) -> list[tuple[int, str]]:
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("""
+        SELECT mq.id, mq.name FROM qj_main_quests mq
+        JOIN qj_campaigns qc ON mq.campaign_id = qc.id
+        WHERE qc.guild_id = ? ORDER BY mq.sort_order
+    """, (guild_id,))
+    rows = c.fetchall()
+    conn.close()
+    return rows
+
+
+def get_side_quest_list(guild_id: int) -> list[tuple[int, str]]:
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("""
+        SELECT sq.id, sq.text FROM qj_side_quests sq
+        JOIN qj_campaigns qc ON sq.campaign_id = qc.id
+        WHERE qc.guild_id = ? ORDER BY sq.sort_order
+    """, (guild_id,))
+    rows = c.fetchall()
+    conn.close()
+    return rows
+
+
+def delete_main_quest(quest_id: int) -> int | None:
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT channel_message_id FROM qj_main_quests WHERE id = ?", (quest_id,))
+    row = c.fetchone()
+    message_id = row[0] if row else None
+    c.execute("DELETE FROM qj_objectives WHERE main_quest_id = ?", (quest_id,))
+    c.execute("DELETE FROM qj_footnotes WHERE main_quest_id = ?", (quest_id,))
+    c.execute("DELETE FROM qj_main_quests WHERE id = ?", (quest_id,))
+    conn.commit()
+    conn.close()
+    return message_id
+
+
+def delete_side_quest(quest_id: int):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("DELETE FROM qj_side_quests WHERE id = ?", (quest_id,))
+    conn.commit()
+    conn.close()
+
+
+def add_main_quest(guild_id: int, name: str, objective: str) -> int | None:
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("SELECT id FROM qj_campaigns WHERE guild_id = ? ORDER BY id DESC LIMIT 1", (guild_id,))
     row = c.fetchone()
     if not row:
         conn.close()
-        return False
+        return None
     campaign_id = row[0]
     c.execute("SELECT COALESCE(MAX(sort_order), -1) + 1 FROM qj_main_quests WHERE campaign_id = ?", (campaign_id,))
     sort_order = c.fetchone()[0]
@@ -301,7 +362,7 @@ def add_main_quest(guild_id: int, name: str, objective: str) -> bool:
               (mq_id, objective))
     conn.commit()
     conn.close()
-    return True
+    return mq_id
 
 
 def add_side_quest(guild_id: int, text: str) -> bool:
