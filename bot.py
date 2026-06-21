@@ -1447,12 +1447,51 @@ async def setcampaign_error(interaction: discord.Interaction, error: app_command
         await interaction.response.send_message("You don't have permission to use this.", ephemeral=True)
 
 
-def _obj_icon(state: str) -> str:
+_A = "["  # ANSI escape prefix
+_RESET   = f"{_A}0m"
+_BOLD    = f"{_A}1m"
+_DIM     = f"{_A}2m"
+_GREEN   = f"{_A}32m"
+_YELLOW  = f"{_A}33m"
+_RED     = f"{_A}31m"
+_WHITE   = f"{_A}37m"
+
+
+def _ansi_obj(text: str, state: str) -> str:
     if state == "completed":
-        return "☑"
+        return f"{_GREEN}☑{_RESET} {text}"
     if state == "failed":
-        return "✘"
-    return "☐"
+        return f"{_RED}✘ {text}{_RESET}"
+    return f"☐ {text}"
+
+
+def _build_journal_ansi(journal: dict) -> str:
+    lines = []
+    lines.append(f"{_BOLD}{_YELLOW}Campaign: {journal['campaign']}{_RESET}\n")
+
+    for mq in journal["main_quests"]:
+        lines.append(f"{_BOLD}⚔️  Main Quest: {mq['name']}{_RESET}")
+        if mq["description"]:
+            lines.append(f"{_DIM}{mq['description']}{_RESET}")
+        for text, state in mq["objectives"]:
+            lines.append(_ansi_obj(text, state))
+        if mq["footnotes"]:
+            lines.append("")
+            for char, note in mq["footnotes"]:
+                lines.append(f"{_DIM}  \"{note}\" — {char}{_RESET}")
+        lines.append("")
+
+    if journal["side_quests"]:
+        lines.append(f"{_BOLD}📋 Side Quests{_RESET}")
+        for i, (text, state) in enumerate(journal["side_quests"], 1):
+            if state == "failed":
+                lines.append(f"{_RED}{i}. ✘ {text}{_RESET}")
+            elif state == "completed":
+                lines.append(f"{_DIM}{i}. {text}{_RESET}")
+            else:
+                lines.append(f"{i}. {text}")
+
+    return "\n".join(lines)
 
 
 @bot.tree.command(name="questjournal", description="Show the party's current quest journal")
@@ -1463,54 +1502,32 @@ async def questjournal(interaction: discord.Interaction):
         await interaction.followup.send("No quest journal found for this server.", ephemeral=True)
         return
 
-    lines = [f"**Campaign: {journal['campaign']}**\n"]
+    content = _build_journal_ansi(journal)
 
-    for mq in journal["main_quests"]:
-        lines.append(f"**⚔️ Main Quest: {mq['name']}**")
-        if mq["description"]:
-            lines.append(f"```{mq['description']}```")
-        for text, state in mq["objectives"]:
-            icon = _obj_icon(state)
-            if state == "failed":
-                lines.append(f"{icon} ~~{text}~~")
-            elif state == "completed":
-                lines.append(f"{icon} {text}")
-            else:
-                lines.append(f"{icon} {text}")
-        if mq["footnotes"]:
-            lines.append("")
-            for char, note in mq["footnotes"]:
-                lines.append(f"> *\"{note}\"* — {char}")
-        lines.append("")
-
-    if journal["side_quests"]:
-        lines.append("**📋 Side Quests**")
-        for i, (text, state) in enumerate(journal["side_quests"], 1):
-            if state in ("completed", "failed"):
-                lines.append(f"{i}. ~~{text}~~")
-            else:
-                lines.append(f"{i}. {text}")
-
-    description = "\n".join(lines)
+    # wrap in ansi code block, split if over limit (4096 - 12 for wrapper)
+    MAX = 4096 - 12
     chunks = []
-    while description:
-        if len(description) <= 4096:
-            chunks.append(description)
+    while content:
+        if len(content) <= MAX:
+            chunks.append(content)
             break
-        split_at = description.rfind("\n", 0, 4096)
+        split_at = content.rfind("\n", 0, MAX)
         if split_at == -1:
-            split_at = 4096
-        chunks.append(description[:split_at])
-        description = description[split_at:].lstrip("\n")
+            split_at = MAX
+        chunks.append(content[:split_at])
+        content = content[split_at:].lstrip("\n")
 
     first_embed = discord.Embed(
         title="📖 Quest Journal",
-        description=chunks[0],
+        description=f"```ansi\n{chunks[0]}\n```",
         color=0xFFB7C5,
     )
     await interaction.followup.send(embed=first_embed)
     for chunk in chunks[1:]:
-        await interaction.channel.send(embed=discord.Embed(description=chunk, color=0xFFB7C5))
+        await interaction.channel.send(embed=discord.Embed(
+            description=f"```ansi\n{chunk}\n```",
+            color=0xFFB7C5,
+        ))
 
 
 def fetch_urban_sync(term: str) -> list | str:
