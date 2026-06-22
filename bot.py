@@ -400,11 +400,14 @@ async def on_message(message: discord.Message):
 
     if "quest journal" in message.content.lower() and message.channel.name == "grand-thieves-insufficient":
         transcript = []
-        async for msg in message.channel.history(limit=150, oldest_first=True):
+        async for msg in message.channel.history(limit=150, oldest_first=False):
             if not msg.content.strip():
                 continue
             transcript.append(f"{msg.author.display_name}: {msg.content}")
+        transcript.reverse()
         transcript_text = "\n".join(transcript)
+        if len(transcript_text) > 2000:
+            transcript_text = transcript_text[-2000:]
         prompt = f"""You are a master storyteller narrating a tabletop RPG session.
 
 Based on the following session transcript, do two things:
