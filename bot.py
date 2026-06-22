@@ -413,6 +413,8 @@ async def on_message(message: discord.Message):
             transcript_text = "\n".join(transcript)
             prompt = f"""You are a professional session scribe for a tabletop RPG campaign.
 
+IMPORTANT: Your entire response must be 950 characters or fewer (strict limit). Write tight.
+
 Based on the following session transcript, do two things:
 
 1. Write a clear, concise summary of what happened this session — key events, decisions made, NPCs encountered, and outcomes. Be factual and organized, not dramatic. Bullet points are fine.
@@ -424,10 +426,7 @@ Transcript:
             async with message.channel.typing():
                 try:
                     summary = await generate(prompt, timeout=120)
-                    header = "## \U0001f4dc The Chronicle So Far\n"
-                    if len(header) + len(summary) > 1000:
-                        summary = summary[:1000 - len(header)]
-                    await message.channel.send(f"{header}{summary}")
+                    await message.channel.send(f"## \U0001f4dc The Chronicle So Far\n{summary}")
                 except Exception as e:
                     print(f"[QuestJournal ERROR] {e}")
             return
