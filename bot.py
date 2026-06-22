@@ -398,20 +398,14 @@ async def on_message(message: discord.Message):
                         f"Character linked: **{char_name}** ({message.author.display_name})"
                     )
 
-    if "quest journal" in message.content.lower():
-        session = database.get_session(message.channel.id)
-        if session:
-            started_at, _ = session
-            started_at = datetime.fromisoformat(started_at)
-            transcript = []
-            async for msg in message.channel.history(limit=None, oldest_first=True):
-                if msg.created_at <= started_at:
-                    continue
-                if not msg.content.strip():
-                    continue
-                transcript.append(f"{msg.author.display_name}: {msg.content}")
-            transcript_text = "\n".join(transcript)
-            prompt = f"""You are a master storyteller narrating a tabletop RPG session.
+    if "quest journal" in message.content.lower() and message.channel.name == "grand-thief-insufficient":
+        transcript = []
+        async for msg in message.channel.history(limit=150, oldest_first=True):
+            if not msg.content.strip():
+                continue
+            transcript.append(f"{msg.author.display_name}: {msg.content}")
+        transcript_text = "\n".join(transcript)
+        prompt = f"""You are a master storyteller narrating a tabletop RPG session.
 
 Based on the following session transcript, do two things:
 
@@ -421,15 +415,15 @@ Based on the following session transcript, do two things:
 
 Transcript:
 {transcript_text}"""
-            async with message.channel.typing():
-                try:
-                    summary = await generate(prompt, timeout=120)
-                    if len(summary) > 1900:
-                        summary = summary[:1900] + "\n..."
-                    await message.channel.send(f"## \U0001f4dc The Chronicle So Far\n{summary}")
-                except Exception as e:
-                    print(f"[QuestJournal ERROR] {e}")
-            return
+        async with message.channel.typing():
+            try:
+                summary = await generate(prompt, timeout=120)
+                if len(summary) > 1900:
+                    summary = summary[:1900] + "\n..."
+                await message.channel.send(f"## \U0001f4dc The Chronicle So Far\n{summary}")
+            except Exception as e:
+                print(f"[QuestJournal ERROR] {e}")
+        return
 
     is_reply_to_bot = False
     is_reply_to_other = False
