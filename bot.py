@@ -406,8 +406,6 @@ async def on_message(message: discord.Message):
             transcript.append(f"{msg.author.display_name}: {msg.content}")
         transcript.reverse()
         transcript_text = "\n".join(transcript)
-        if len(transcript_text) > 2000:
-            transcript_text = transcript_text[-2000:]
         prompt = f"""You are a master storyteller narrating a tabletop RPG session.
 
 Based on the following session transcript, do two things:
@@ -421,9 +419,10 @@ Transcript:
         async with message.channel.typing():
             try:
                 summary = await generate(prompt, timeout=120)
-                if len(summary) > 1900:
-                    summary = summary[:1900] + "\n..."
-                await message.channel.send(f"## \U0001f4dc The Chronicle So Far\n{summary}")
+                header = "## \U0001f4dc The Chronicle So Far\n"
+                if len(header) + len(summary) > 2000:
+                    summary = summary[:2000 - len(header)]
+                await message.channel.send(f"{header}{summary}")
             except Exception as e:
                 print(f"[QuestJournal ERROR] {e}")
         return
