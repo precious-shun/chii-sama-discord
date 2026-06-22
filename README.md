@@ -4,6 +4,63 @@ A Discord bot roleplaying as **Chitose Karasuma** from *Girlish Number*, powered
 
 ---
 
+## Commands
+
+### General Use
+
+| Command | Description | Parameters |
+|---|---|---|
+| `/ask` | Ask Chii-sama a question via Gemini | `question` |
+| `/roast` | Have Chii-sama roast a server member | `target` (mention) |
+| `/8ball` | Ask the magic 8-ball | `question` |
+| `/pick` | Pick one option at random from a list | `options` (comma-separated) |
+| `/daily` | Claim 100 coins once per day | — |
+| `/coins` | Check your coin balance | — |
+| `/leaderboard` | Show the top 10 coin holders | — |
+| `/rps` | Rock paper scissors vs Chii-sama — win 50 coins | `choice` |
+| `/draw` | Generate an image from a prompt | `prompt` |
+| `/urban` | Look up a term on Urban Dictionary (paginated) | `term` |
+| `/cm` | Make Chii-sama send a message as herself *(DM/puppet ppl only)* | `message` |
+
+**Passive triggers (no command needed):**
+- Mentioning **Chii-sama**, **Chitose**, or **Karasuma** in a message triggers a reply
+- @mentioning the bot triggers a reply
+- Replying to one of Chii-sama's messages continues the conversation
+- `?beyond <url or ID>` links a D&D Beyond character sheet to your account (shorthand alternative to `/linkcharacter`)
+
+---
+
+### D&D Use
+
+#### Player Commands
+
+| Command | Description | Parameters |
+|---|---|---|
+| `/linkcharacter` | Link your D&D Beyond character sheet for roll modifiers | `url` (URL or character ID) |
+| `/dndskillissue` | Get Gemini-powered tactical advice based on your linked character sheet | `obstacle` |
+| `/footnote` | Add a personal note to a main quest in the journal | `name` (quest), `footnote` |
+| `/questjournal` | Show the party's current quest journal | — |
+
+#### DM / Admin Commands *(DM or puppet ppl role required)*
+
+| Command | Description | Parameters |
+|---|---|---|
+| `/setcampaign` | Set the active campaign name for this server | `name` |
+| `/rollrequest` | Request up to 6 players to roll a skill check with interactive buttons | `check`, `player1–6`, `mode1–6`, `everyone`, `required` |
+| `/sessionstart` | Start recording a session in the current channel | — |
+| `/sessionend` | End the session and generate a structured summary | — |
+| `/createquest` | Add a new main or side quest to the journal | `quest_type`, `name`, `objective`, `description` |
+| `/updatequest` | Update quest status, description, or objectives | `quest_type`, `name`, `status`\*, `objective`\*, `description`\*, `add_objective`\* |
+| `/deletequest` | Delete a quest from the journal | `quest_type`, `name` |
+
+\* optional
+
+**Passive triggers (D&D):**
+- Saying **"quest journal"** in a channel with an active session generates a storyteller-style chronicle of the session so far plus up to 4 quest hook suggestions
+- Adding a footnote announces `{character} scribbled something on #newbies-quest-journal` in the current channel
+
+---
+
 ## Changelog
 
 ### v0.8.0 — Urban Dictionary (2026-06-21)
