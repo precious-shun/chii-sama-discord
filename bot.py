@@ -399,6 +399,16 @@ async def on_message(message: discord.Message):
                     )
 
     if "quest journal" in message.content.lower() and message.channel.name == "grand-thieves-insufficient":
+        char_name = message.author.display_name
+        char_id = database.get_character_id(message.author.id)
+        if char_id:
+            char_data = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: fetch_character_sync(char_id)
+            )
+            if isinstance(char_data, dict):
+                fetched_name = (char_data.get("data") or {}).get("name")
+                if fetched_name:
+                    char_name = fetched_name
         transcript = []
         async for msg in message.channel.history(limit=150, oldest_first=False):
             if not msg.content.strip():
@@ -412,16 +422,26 @@ IMPORTANT: Your entire response must be 950 characters or fewer (strict limit). 
 
 Based on the following session transcript, do two things:
 
-1. Write a clear, concise summary of what happened this session — key events, decisions made, NPCs encountered, and outcomes. Be factual and organized, not dramatic. Bullet points are fine.
+1. Write a single paragraph of exactly 4-5 sentences summarizing what happened — key events, decisions, NPCs encountered, and outcomes. No headers, no bullet points, plain prose only.
 
-2. Based on the events and context, suggest up to 4 quests that could naturally follow from what happened. If the transcript doesn't have enough material for 4, suggest fewer. Format each as a short quest title followed by one sentence describing it.
+2. Suggest up to 4 quests that could potentially be added based on the events. If the transcript doesn't have enough material for 4, suggest fewer. Format each as: **Quest Title** — one sentence describing it. No numbering.
+
+Separate the two parts with a blank line and the label "Potential Quest Could Be Added:" before the quest list.
 
 Transcript:
 {transcript_text}"""
         async with message.channel.typing():
             try:
-                summary = await generate(prompt, timeout=120)
-                await message.channel.send(f"## \U0001f4dc The Chronicle So Far\n{summary}")
+                result = await generate(prompt, timeout=120)
+                parts = result.split("Potential Quest Could Be Added:", 1)
+                summary_block = parts[0].strip()
+                quests_block = ("Potential Quest Could Be Added:\n" + parts[1].strip()) if len(parts) > 1 else result.strip()
+                output = (
+                    f"As **{char_name}** interacted with quest journal, several things come in mind\n\n"
+                    f"```{summary_block}```\n\n"
+                    f"{quests_block}"
+                )
+                await message.channel.send(output)
             except Exception as e:
                 print(f"[QuestJournal ERROR] {e}")
         return
