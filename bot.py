@@ -411,13 +411,13 @@ async def on_message(message: discord.Message):
                     continue
                 transcript.append(f"{msg.author.display_name}: {msg.content}")
             transcript_text = "\n".join(transcript)
-            prompt = f"""You are a master storyteller narrating a tabletop RPG session.
+            prompt = f"""You are a professional session scribe for a tabletop RPG campaign.
 
 Based on the following session transcript, do two things:
 
-1. Retell what happened so far as an immersive, vivid narrative — as if reading from a fantasy chronicle. Use dramatic prose, give weight to player decisions, and make it feel like an epic unfolding story. Keep it focused and punchy, not overly long.
+1. Write a clear, concise summary of what happened this session — key events, decisions made, NPCs encountered, and outcomes. Be factual and organized, not dramatic. Bullet points are fine.
 
-2. Based on the events and context, suggest up to 4 quest hooks that would naturally arise from what happened. If the transcript doesn't have enough material for 4, suggest fewer. Format each as a short evocative quest title followed by one sentence of flavor text.
+2. Based on the events and context, suggest up to 4 quests that could naturally follow from what happened. If the transcript doesn't have enough material for 4, suggest fewer. Format each as a short quest title followed by one sentence describing it.
 
 Transcript:
 {transcript_text}"""
