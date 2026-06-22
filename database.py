@@ -80,6 +80,14 @@ def init_db():
             sort_order INTEGER DEFAULT 0
         )
     """)
+    #for session recording
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS sessions (
+            channel_id INTEGER PRIMARY KEY,
+            started_at TEXT NOT NULL,
+            started_by INTEGER
+        )
+    """)
     conn.commit()
     try:
         c.execute("ALTER TABLE qj_main_quests ADD COLUMN channel_message_id INTEGER")
@@ -89,7 +97,43 @@ def init_db():
     _seed_quest_data(conn)
     conn.close()
 
+#for session recording
+def start_session(channel_id: int, started_at: str, started_by: int):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute(
+        """
+        INSERT OR REPLACE INTO sessions
+        (channel_id, started_at, started_by)
+        VALUES (?, ?, ?)
+        """,
+        (channel_id, started_at, started_by),
+    )
+    conn.commit()
+    conn.close()
 
+
+def get_session(channel_id: int):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute(
+        "SELECT started_at, started_by FROM sessions WHERE channel_id = ?",
+        (channel_id,),
+    )
+    row = c.fetchone()
+    conn.close()
+    return row
+
+
+def end_session(channel_id: int):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute(
+        "DELETE FROM sessions WHERE channel_id = ?",
+        (channel_id,),
+    )
+    conn.commit()
+    conn.close()
 def _seed_quest_data(conn):
     c = conn.cursor()
     GUILD_ID = 184915565511442432

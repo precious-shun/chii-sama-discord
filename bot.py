@@ -8,7 +8,7 @@ import re
 import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
-from datetime import datetime
+from datetime import datetime, timezone
 
 import discord
 from discord import app_commands
@@ -501,6 +501,101 @@ async def on_message(message: discord.Message):
                     await message.reply("...what.")
     await bot.process_commands(message)
 
+#for session recording
+@bot.tree.command(
+    name="sessionstart",
+    description="Start recording a session"
+)
+async def sessionstart(interaction: discord.Interaction):
+
+    existing = database.get_session(interaction.channel.id)
+
+    if existing:
+        await interaction.response.send_message(
+            "A session is already running in this channel.",
+            ephemeral=True
+        )
+        return
+
+    now = datetime.now(timezone.utc).isoformat()
+
+    database.start_session(
+        interaction.channel.id,
+        now,
+        interaction.user.id
+    )
+
+    await interaction.response.send_message(
+        "Session recording started."
+    )
+
+#for session recording
+@bot.tree.command(
+    name="sessionend",
+    description="End session and summarize"
+)
+async def sessionend(interaction: discord.Interaction):
+
+    session = database.get_session(interaction.channel.id)
+
+    if not session:
+        await interaction.response.send_message(
+            "No active session found.",
+            ephemeral=True
+        )
+        return
+
+    await interaction.response.defer()
+
+    started_at, started_by = session
+    started_at = datetime.fromisoformat(started_at)
+
+    transcript = []
+
+    async for msg in interaction.channel.history(
+        limit=None,
+        oldest_first=True
+    ):
+
+        created = msg.created_at
+
+        if created <= started_at:
+            continue
+
+        if not msg.content.strip():
+            continue
+
+        transcript.append(
+            f"{msg.author.display_name}: {msg.content}"
+        )
+
+    transcript_text = "\n".join(transcript)
+
+    prompt = f"""
+Summarize the following Discord session.
+
+Provide:
+
+1. Executive summary
+2. Important decisions
+3. Action items
+4. Open questions
+
+Transcript:
+
+{transcript_text}
+"""
+
+    summary = await generate(prompt, timeout=120)
+
+    database.end_session(interaction.channel.id)
+
+    if len(summary) > 1900:
+        summary = summary[:1900] + "\n..."
+
+    await interaction.followup.send(
+        f"## Session Summary\n{summary}"
+    )
 
 @bot.tree.command(name="ask", description="Ask Chii-sama a question")
 @app_commands.describe(question="What do you want to ask?")
