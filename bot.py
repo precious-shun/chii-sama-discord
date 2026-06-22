@@ -398,7 +398,7 @@ async def on_message(message: discord.Message):
                         f"Character linked: **{char_name}** ({message.author.display_name})"
                     )
 
-    if "quest journal" in message.content.lower() and message.channel.name == "grand-thief-insufficient":
+    if "quest journal" in message.content.lower() and message.channel.name == "grand-thieves-insufficient":
         transcript = []
         async for msg in message.channel.history(limit=150, oldest_first=True):
             if not msg.content.strip():
