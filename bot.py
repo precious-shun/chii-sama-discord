@@ -424,7 +424,7 @@ Based on the following session transcript, do two things:
 
 1. Write a single paragraph of exactly 4-5 sentences summarizing what happened — key events, decisions, NPCs encountered, and outcomes. No headers, no bullet points, plain prose only.
 
-2. Suggest up to 4 quests that could potentially be added based on the events. If the transcript doesn't have enough material for 4, suggest fewer. Format each as: **Quest Title** — one sentence describing it. No numbering.
+2. Suggest up to 4 quests that could potentially be added based on the events. If the transcript doesn't have enough material for 4, suggest fewer. Format each as: - **Quest Title** — one sentence describing it. No numbering.
 
 Separate the two parts with a blank line and the label "Potential Quest Could Be Added:" before the quest list.
 
