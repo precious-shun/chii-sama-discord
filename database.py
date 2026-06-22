@@ -88,6 +88,17 @@ def init_db():
             started_by INTEGER
         )
     """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS session_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            channel_id INTEGER NOT NULL,
+            started_at TEXT NOT NULL,
+            ended_at TEXT,
+            started_by INTEGER,
+            start_message_id INTEGER,
+            end_message_id INTEGER
+        )
+    """)
     conn.commit()
     try:
         c.execute("ALTER TABLE qj_main_quests ADD COLUMN channel_message_id INTEGER")
@@ -131,6 +142,32 @@ def end_session(channel_id: int):
     c.execute(
         "DELETE FROM sessions WHERE channel_id = ?",
         (channel_id,),
+    )
+    conn.commit()
+    conn.close()
+
+
+def log_session_start(channel_id: int, started_at: str, started_by: int, start_message_id: int) -> int:
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute(
+        "INSERT INTO session_log (channel_id, started_at, started_by, start_message_id) VALUES (?, ?, ?, ?)",
+        (channel_id, started_at, started_by, start_message_id),
+    )
+    session_id = c.lastrowid
+    conn.commit()
+    conn.close()
+    return session_id
+
+
+def log_session_end(channel_id: int, ended_at: str, end_message_id: int):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute(
+        """UPDATE session_log SET ended_at = ?, end_message_id = ?
+           WHERE channel_id = ? AND ended_at IS NULL
+           ORDER BY id DESC LIMIT 1""",
+        (ended_at, end_message_id, channel_id),
     )
     conn.commit()
     conn.close()

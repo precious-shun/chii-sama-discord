@@ -573,9 +573,9 @@ async def sessionstart(interaction: discord.Interaction):
         interaction.user.id
     )
 
-    await interaction.response.send_message(
-        "Session recording started."
-    )
+    await interaction.response.send_message("Session recording started.")
+    msg = await interaction.original_response()
+    database.log_session_start(interaction.channel.id, now, interaction.user.id, msg.id)
 
 #for session recording
 @bot.tree.command(
@@ -641,9 +641,9 @@ Transcript:
     if len(summary) > 1900:
         summary = summary[:1900] + "\n..."
 
-    await interaction.followup.send(
-        f"## Session Summary\n{summary}"
-    )
+    sent = await interaction.followup.send(f"## Session Summary\n{summary}")
+    now = datetime.now(timezone.utc).isoformat()
+    database.log_session_end(interaction.channel.id, now, sent.id)
 
 @bot.tree.command(name="ask", description="Ask Chii-sama a question")
 @app_commands.describe(question="What do you want to ask?")
