@@ -398,25 +398,30 @@ async def on_message(message: discord.Message):
                         f"Character linked: **{char_name}** ({message.author.display_name})"
                     )
 
-    if "quest journal" in message.content.lower() and message.channel.name == "grand-thieves-insufficient":
-        char_name = message.author.display_name
-        char_id = database.get_character_id(message.author.id)
-        if char_id:
-            char_data = await asyncio.get_event_loop().run_in_executor(
-                None, lambda: fetch_character_sync(char_id)
-            )
-            if isinstance(char_data, dict):
-                fetched_name = (char_data.get("data") or {}).get("name")
-                if fetched_name:
-                    char_name = fetched_name
-        transcript = []
-        async for msg in message.channel.history(limit=150, oldest_first=False):
-            if not msg.content.strip():
-                continue
-            transcript.append(f"{msg.author.display_name}: {msg.content}")
-        transcript.reverse()
-        transcript_text = "\n".join(transcript)
-        prompt = f"""You are a professional session scribe for a tabletop RPG campaign.
+    if "quest journal" in message.content.lower():
+        session = database.get_session(message.channel.id)
+        if session:
+            started_at, _ = session
+            started_at_dt = datetime.fromisoformat(started_at)
+            char_name = message.author.display_name
+            char_id = database.get_character_id(message.author.id)
+            if char_id:
+                char_data = await asyncio.get_event_loop().run_in_executor(
+                    None, lambda: fetch_character_sync(char_id)
+                )
+                if isinstance(char_data, dict):
+                    fetched_name = (char_data.get("data") or {}).get("name")
+                    if fetched_name:
+                        char_name = fetched_name
+            transcript = []
+            async for msg in message.channel.history(limit=None, oldest_first=True):
+                if msg.created_at <= started_at_dt:
+                    continue
+                if not msg.content.strip():
+                    continue
+                transcript.append(f"{msg.author.display_name}: {msg.content}")
+            transcript_text = "\n".join(transcript)
+            prompt = f"""You are a professional session scribe for a tabletop RPG campaign.
 
 IMPORTANT: Your entire response must be 950 characters or fewer (strict limit). Write tight.
 
@@ -430,21 +435,21 @@ Separate the two parts with a blank line and the label "Potential Quest Could Be
 
 Transcript:
 {transcript_text}"""
-        async with message.channel.typing():
-            try:
-                result = await generate(prompt, timeout=120)
-                parts = result.split("Potential Quest Could Be Added:", 1)
-                summary_block = parts[0].strip()
-                quests_block = ("Potential Quest Could Be Added:\n" + parts[1].strip()) if len(parts) > 1 else result.strip()
-                output = (
-                    f"As **{char_name}** interacted with quest journal, several things come in mind\n\n"
-                    f"```{summary_block}```\n\n"
-                    f"{quests_block}"
-                )
-                await message.channel.send(output)
-            except Exception as e:
-                print(f"[QuestJournal ERROR] {e}")
-        return
+            async with message.channel.typing():
+                try:
+                    result = await generate(prompt, timeout=120)
+                    parts = result.split("Potential Quest Could Be Added:", 1)
+                    summary_block = parts[0].strip()
+                    quests_block = ("Potential Quest Could Be Added:\n" + parts[1].strip()) if len(parts) > 1 else result.strip()
+                    output = (
+                        f"As **{char_name}** interacted with quest journal, several things come in mind\n\n"
+                        f"```{summary_block}```\n\n"
+                        f"{quests_block}"
+                    )
+                    await message.channel.send(output)
+                except Exception as e:
+                    print(f"[QuestJournal ERROR] {e}")
+            return
 
     is_reply_to_bot = False
     is_reply_to_other = False
