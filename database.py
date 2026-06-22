@@ -99,6 +99,17 @@ def init_db():
             end_message_id INTEGER
         )
     """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS quest_journal_summaries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_log_id INTEGER NOT NULL,
+            channel_id INTEGER NOT NULL,
+            generated_at TEXT NOT NULL,
+            summary TEXT NOT NULL,
+            message_id INTEGER,
+            FOREIGN KEY (session_log_id) REFERENCES session_log(id)
+        )
+    """)
     conn.commit()
     try:
         c.execute("ALTER TABLE qj_main_quests ADD COLUMN channel_message_id INTEGER")
@@ -171,6 +182,31 @@ def log_session_end(channel_id: int, ended_at: str, end_message_id: int):
     )
     conn.commit()
     conn.close()
+
+
+def get_active_session_log_id(channel_id: int) -> int | None:
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute(
+        "SELECT id FROM session_log WHERE channel_id = ? AND ended_at IS NULL ORDER BY id DESC LIMIT 1",
+        (channel_id,),
+    )
+    row = c.fetchone()
+    conn.close()
+    return row[0] if row else None
+
+
+def save_quest_journal_summary(session_log_id: int, channel_id: int, generated_at: str, summary: str, message_id: int):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute(
+        "INSERT INTO quest_journal_summaries (session_log_id, channel_id, generated_at, summary, message_id) VALUES (?, ?, ?, ?, ?)",
+        (session_log_id, channel_id, generated_at, summary, message_id),
+    )
+    conn.commit()
+    conn.close()
+
+
 def _seed_quest_data(conn):
     c = conn.cursor()
     GUILD_ID = 184915565511442432

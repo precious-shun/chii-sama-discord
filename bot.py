@@ -446,7 +446,11 @@ Transcript:
                         f"```{summary_block}```\n\n"
                         f"{quests_block}"
                     )
-                    await message.channel.send(output)
+                    sent = await message.channel.send(output)
+                    session_log_id = database.get_active_session_log_id(message.channel.id)
+                    if session_log_id:
+                        now = datetime.now(timezone.utc).isoformat()
+                        database.save_quest_journal_summary(session_log_id, message.channel.id, now, result, sent.id)
                 except Exception as e:
                     print(f"[QuestJournal ERROR] {e}")
             return
