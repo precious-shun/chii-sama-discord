@@ -450,6 +450,14 @@ def get_main_quest_detail(quest_id: int) -> dict | None:
     return {"name": row[0], "description": row[1], "channel_message_id": row[2]}
 
 
+def update_quest_description(quest_id: int, description: str):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("UPDATE qj_main_quests SET description = ? WHERE id = ?", (description, quest_id))
+    conn.commit()
+    conn.close()
+
+
 def get_objectives_for_quest(main_quest_id: int) -> list[tuple[int, str, str]]:
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()

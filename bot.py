@@ -1853,6 +1853,7 @@ _STATUS_CHOICES = [
     name="Quest to update",
     status="New status to apply",
     objective="Specific objective to update — leave empty to apply to all",
+    description="Update the quest description",
 )
 @app_commands.choices(quest_type=_QUEST_TYPE_CHOICES, status=_STATUS_CHOICES)
 @app_commands.checks.has_any_role("DM", "puppet ppl")
@@ -1860,10 +1861,15 @@ async def updatequest(
     interaction: discord.Interaction,
     quest_type: app_commands.Choice[str],
     name: str,
-    status: app_commands.Choice[str],
+    status: app_commands.Choice[str] | None = None,
     objective: str | None = None,
+    description: str | None = None,
 ):
     await interaction.response.defer(ephemeral=True)
+
+    if status is None and description is None:
+        await interaction.delete_original_response()
+        return
 
     if quest_type.value == "side":
         quests = database.get_side_quest_list(interaction.guild_id)
@@ -1871,8 +1877,9 @@ async def updatequest(
         if not match:
             await interaction.followup.send("Side quest not found.", ephemeral=True)
             return
-        database.update_side_quest_state(match[0], status.value)
-        await interaction.followup.send(f"Side quest updated to **{status.name}**.", ephemeral=True)
+        if status:
+            database.update_side_quest_state(match[0], status.value)
+        await interaction.followup.send("Side quest updated.", ephemeral=True)
         return
 
     quests = database.get_main_quest_names(interaction.guild_id)
@@ -1882,15 +1889,19 @@ async def updatequest(
         return
     quest_id, _ = match
 
-    if objective:
-        objectives = database.get_objectives_for_quest(quest_id)
-        obj_match = next(((oid, otext, ostate) for oid, otext, ostate in objectives if otext == objective), None)
-        if not obj_match:
-            await interaction.followup.send("Objective not found.", ephemeral=True)
-            return
-        database.update_objective_state(obj_match[0], status.value)
-    else:
-        database.update_all_ongoing_objectives(quest_id, status.value)
+    if description is not None:
+        database.update_quest_description(quest_id, description)
+
+    if status is not None:
+        if objective:
+            objectives = database.get_objectives_for_quest(quest_id)
+            obj_match = next(((oid, otext, ostate) for oid, otext, ostate in objectives if otext == objective), None)
+            if not obj_match:
+                await interaction.followup.send("Objective not found.", ephemeral=True)
+                return
+            database.update_objective_state(obj_match[0], status.value)
+        else:
+            database.update_all_ongoing_objectives(quest_id, status.value)
 
     quest_detail = database.get_main_quest_detail(quest_id)
     updated_objectives = database.get_objectives_for_quest(quest_id)
@@ -1912,7 +1923,7 @@ async def updatequest(
             print(f"[updatequest] Failed to edit journal message: {e}")
 
     quest_name = quest_detail["name"] if quest_detail else name
-    if status.value in ("completed", "failed"):
+    if status is not None and status.value in ("completed", "failed"):
         status_word = status.name
         obj_label = objective if objective else "All objectives"
         await interaction.channel.send(f"**{quest_name}**: {obj_label} — **{status_word}**")
