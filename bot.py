@@ -398,6 +398,39 @@ async def on_message(message: discord.Message):
                         f"Character linked: **{char_name}** ({message.author.display_name})"
                     )
 
+    if "quest journal" in message.content.lower():
+        session = database.get_session(message.channel.id)
+        if session:
+            started_at, _ = session
+            started_at = datetime.fromisoformat(started_at)
+            transcript = []
+            async for msg in message.channel.history(limit=None, oldest_first=True):
+                if msg.created_at <= started_at:
+                    continue
+                if not msg.content.strip():
+                    continue
+                transcript.append(f"{msg.author.display_name}: {msg.content}")
+            transcript_text = "\n".join(transcript)
+            prompt = f"""You are a master storyteller narrating a tabletop RPG session.
+
+Based on the following session transcript, do two things:
+
+1. Retell what happened so far as an immersive, vivid narrative — as if reading from a fantasy chronicle. Use dramatic prose, give weight to player decisions, and make it feel like an epic unfolding story. Keep it focused and punchy, not overly long.
+
+2. Based on the events and context, suggest up to 4 quest hooks that would naturally arise from what happened. If the transcript doesn't have enough material for 4, suggest fewer. Format each as a short evocative quest title followed by one sentence of flavor text.
+
+Transcript:
+{transcript_text}"""
+            async with message.channel.typing():
+                try:
+                    summary = await generate(prompt, timeout=120)
+                    if len(summary) > 1900:
+                        summary = summary[:1900] + "\n..."
+                    await message.channel.send(f"## \U0001f4dc The Chronicle So Far\n{summary}")
+                except Exception as e:
+                    print(f"[QuestJournal ERROR] {e}")
+            return
+
     is_reply_to_bot = False
     is_reply_to_other = False
     is_followup = False
@@ -1690,13 +1723,14 @@ class QuestFootnoteModal(discord.ui.Modal, title="Quest Footnote"):
                 if fetched_name:
                     char_name = fetched_name
         database.save_footnote(self.quest_id, char_name, footnote_text)
-        try:
-            journal_channel = interaction.guild.get_channel(self.journal_channel_id)
-            if journal_channel:
+        journal_channel = interaction.guild.get_channel(self.journal_channel_id)
+        if journal_channel:
+            try:
                 msg = await journal_channel.fetch_message(self.journal_message_id)
                 await msg.edit(content=msg.content + f'\n-# "{footnote_text}" — {char_name}{self.suffix}')
-        except Exception as e:
-            print(f"[Footnote] Failed to edit journal message: {e}")
+            except Exception as e:
+                print(f"[Footnote] Failed to edit journal message: {e}")
+            await interaction.channel.send(f"{char_name} scribbled something on {journal_channel.mention}")
         await interaction.followup.send("Footnote added.", ephemeral=True)
 
 
@@ -1966,6 +2000,7 @@ async def footnote_cmd(interaction: discord.Interaction, name: str, footnote: st
             await msg.edit(content=msg.content + f'\n-# "{footnote.strip()}" — {char_name}')
         except Exception as e:
             print(f"[footnote] Failed to edit journal message: {e}")
+        await interaction.channel.send(f"{char_name} scribbled something on {journal_channel.mention}")
 
     await interaction.followup.send("Footnote added.", ephemeral=True)
 
