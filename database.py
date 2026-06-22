@@ -458,6 +458,17 @@ def update_quest_description(quest_id: int, description: str):
     conn.close()
 
 
+def add_objective_to_quest(quest_id: int, text: str):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT COALESCE(MAX(sort_order), -1) + 1 FROM qj_objectives WHERE main_quest_id = ?", (quest_id,))
+    sort_order = c.fetchone()[0]
+    c.execute("INSERT INTO qj_objectives (main_quest_id, text, state, sort_order) VALUES (?, ?, 'ongoing', ?)",
+              (quest_id, text, sort_order))
+    conn.commit()
+    conn.close()
+
+
 def get_objectives_for_quest(main_quest_id: int) -> list[tuple[int, str, str]]:
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()

@@ -1854,6 +1854,7 @@ _STATUS_CHOICES = [
     status="New status to apply",
     objective="Specific objective to update — leave empty to apply to all",
     description="Update the quest description",
+    add_objective="Add a new objective to this quest",
 )
 @app_commands.choices(quest_type=_QUEST_TYPE_CHOICES, status=_STATUS_CHOICES)
 @app_commands.checks.has_any_role("DM", "puppet ppl")
@@ -1864,10 +1865,11 @@ async def updatequest(
     status: app_commands.Choice[str] | None = None,
     objective: str | None = None,
     description: str | None = None,
+    add_objective: str | None = None,
 ):
     await interaction.response.defer(ephemeral=True)
 
-    if status is None and description is None:
+    if status is None and description is None and add_objective is None:
         await interaction.delete_original_response()
         return
 
@@ -1891,6 +1893,9 @@ async def updatequest(
 
     if description is not None:
         database.update_quest_description(quest_id, description)
+
+    if add_objective is not None:
+        database.add_objective_to_quest(quest_id, add_objective.strip())
 
     if status is not None:
         if objective:
