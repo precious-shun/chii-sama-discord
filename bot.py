@@ -223,16 +223,20 @@ def _generate_image_cloudflare(prompt: str) -> bytes | str:
         return str(e)
 
 
-def generate_image_sync(prompt: str) -> bytes | str:
+def generate_image_sync(prompt: str) -> tuple[bytes | str, str | None]:
+    """Returns (image_bytes_or_error_string, backend_label). backend_label is
+    None when generation failed outright (image_bytes_or_error_string is then
+    the error string to show the user)."""
     boosted = f"masterpiece, best quality, highly detailed, {prompt}"
 
     if PUTER_AUTH_TOKEN:
         try:
-            return _generate_image_puter(boosted)
+            return _generate_image_puter(boosted), "Puter (gpt-image-1)"
         except Exception as e:
             print(f"[Draw] Puter image gen failed, falling back to Cloudflare: {e}")
 
-    return _generate_image_cloudflare(boosted)
+    result = _generate_image_cloudflare(boosted)
+    return result, ("Cloudflare (Flux Schnell)" if isinstance(result, bytes) else None)
 
 
 def get_model() -> genai.GenerativeModel:
@@ -863,7 +867,7 @@ async def speak_error(interaction: discord.Interaction, error: app_commands.AppC
 @app_commands.describe(prompt="What to draw")
 async def draw(interaction: discord.Interaction, prompt: str):
     await interaction.response.defer()
-    image_bytes = await asyncio.get_event_loop().run_in_executor(
+    image_bytes, backend = await asyncio.get_event_loop().run_in_executor(
         None, lambda: generate_image_sync(prompt)
     )
     if isinstance(image_bytes, bytes):
@@ -875,7 +879,10 @@ async def draw(interaction: discord.Interaction, prompt: str):
             "Chii-sama has graced you with her creativity. Appreciate it.",
             "*sighs* There. Happy now?",
         ]
-        await interaction.followup.send(random.choice(lines), file=file)
+        message = random.choice(lines)
+        if backend:
+            message += f"\n— via {backend}"
+        await interaction.followup.send(message, file=file)
     else:
         await interaction.followup.send(f"[debug] {image_bytes}")
 
