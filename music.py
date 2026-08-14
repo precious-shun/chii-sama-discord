@@ -2,70 +2,19 @@ import asyncio
 import re
 from collections import deque
 
-import aiohttp
 import discord
 from discord import app_commands
 from discord.ext import commands
 
-# ── InnerTube endpoints ────────────────────────────────────────────────────────
-_SEARCH_URL = "https://music.youtube.com/youtubei/v1/search?prettyPrint=false"
-_PLAYER_URL = "https://www.youtube.com/youtubei/v1/player?prettyPrint=false"
+# ── yt-dlp fetching ──────────────────────────────────────────────────────────
+# Uses yt-dlp + the bgutil-pot PO Token provider (see /home/chiisama/yt-dlp.conf)
+# instead of hand-rolled InnerTube requests — yt-dlp's client fallback chain and
+# PO Token support are actively maintained against YouTube's bot checks, which
+# our old hardcoded client list eventually fell behind on ("Sign in to confirm
+# you're not a bot"). See music.py.bak.* for the previous implementation.
+_YTDLP_BIN  = "/opt/chii-sama/venv/bin/yt-dlp"
+_YTDLP_CONF = "/home/chiisama/yt-dlp.conf"
 _YT_ID_RE   = re.compile(r'(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/shorts/)([a-zA-Z0-9_-]{11})')
-
-_PLAYER_CLIENTS = [
-    # TVHTML5_SIMPLY — omitBotguardData bypasses "sign in to confirm you're not a bot"
-    # Sourced from lavalink-devs/youtube-source TvHtml5Simply.java
-    {
-        "name": "TVHTML5_SIMPLY",
-        "ctx": {
-            "clientName": "TVHTML5_SIMPLY",
-            "clientVersion": "1.0",
-            "hl": "en", "gl": "US",
-        },
-        "userAgent": "Mozilla/5.0 (SMART-TV; LINUX; Tizen 6.0) AppleWebKit/538.1 (KHTML, like Gecko) Version/6.0 TV Safari/538.1",
-        "embedUrl": None,
-        "attestationRequest": {"omitBotguardData": True},
-    },
-    # ANDROID_VR (Eureka/Chromecast) — version from youtube-source AndroidVr.java
-    {
-        "name": "ANDROID_VR",
-        "ctx": {
-            "clientName": "ANDROID_VR",
-            "clientVersion": "1.60.19",
-            "androidSdkVersion": 32,
-            "hl": "en", "gl": "US",
-        },
-        "userAgent": "com.google.android.apps.youtube.vr.oculus/1.60.19 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip",
-        "embedUrl": None,
-        "attestationRequest": None,
-    },
-    # ANDROID_MUSIC — YouTube Music Android app, version from youtube-source AndroidMusic.java
-    {
-        "name": "ANDROID_MUSIC",
-        "ctx": {
-            "clientName": "ANDROID_MUSIC",
-            "clientVersion": "7.27.52",
-            "androidSdkVersion": 30,
-            "hl": "en", "gl": "US",
-        },
-        "userAgent": "com.google.android.apps.youtube.music/7.27.52 (Linux; U; Android 11) gzip",
-        "embedUrl": None,
-        "attestationRequest": None,
-    },
-    # IOS — fallback
-    {
-        "name": "IOS",
-        "ctx": {
-            "clientName": "IOS",
-            "clientVersion": "21.03.1",
-            "osVersion": "18.2.22C152",
-            "hl": "en", "gl": "US",
-        },
-        "userAgent": "com.google.ios.youtube/21.03.1 (iPhone16,2; U; CPU iOS 18_2 like Mac OS X;)",
-        "embedUrl": None,
-        "attestationRequest": None,
-    },
-]
 
 FFMPEG_OPTIONS = {
     'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
@@ -73,164 +22,86 @@ FFMPEG_OPTIONS = {
 }
 
 
-# ── InnerTube helpers ──────────────────────────────────────────────────────────
+# ── yt-dlp helpers ──────────────────────────────────────────────────────────
 
-async def _search(query: str) -> tuple[str, str] | None:
-    """Search YouTube Music via InnerTube. Returns (video_id, title) or None."""
+async def _run_ytdlp(*args: str, timeout: float = 25) -> tuple[int, str, str]:
+    """Run yt-dlp with our config (plugin-dirs, client fallback list, js runtime).
+    Returns (returncode, stdout, stderr)."""
+    proc = await asyncio.create_subprocess_exec(
+        _YTDLP_BIN, "--config-location", _YTDLP_CONF, *args,
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+    except asyncio.TimeoutError:
+        proc.kill()
+        await proc.communicate()
+        return -1, "", "yt-dlp timed out"
+    return proc.returncode, stdout.decode(errors="ignore"), stderr.decode(errors="ignore")
+
+
+async def _candidates(query: str) -> list[tuple[str, str]]:
+    """Resolve a search query or direct URL/ID to (video_id, title) candidates.
+    Multiple candidates let us fall through to a different upload (e.g. a lyric
+    video or official audio) if the top hit is blocked with a bot check."""
     m = _YT_ID_RE.search(query)
     if m:
-        return m.group(1), query
+        return [(m.group(1), query)]
 
-    body = {
-        "context": {
-            "client": {
-                "clientName": "WEB_REMIX",
-                "clientVersion": "1.20260213.01.00",
-                "hl": "en", "gl": "US",
-            }
-        },
-        "query": query,
-    }
-    headers = {
-        "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0",
-        "Origin": "https://music.youtube.com",
-        "Referer": "https://music.youtube.com/",
-    }
+    code, out, err = await _run_ytdlp(
+        "--flat-playlist", "--print", "%(id)s\t%(title)s", f"ytsearch3:{query}",
+        timeout=15,
+    )
+    if code != 0 or not out.strip():
+        reason = err.strip().splitlines()[-1] if err.strip() else f"exit code {code}"
+        print(f"[Music] search failed: {reason}")
+        return []
+
+    candidates = []
+    for line in out.strip().splitlines():
+        parts = line.split("\t", 1)
+        if len(parts) == 2:
+            candidates.append((parts[0], parts[1]))
+    return candidates
+
+
+async def _get_stream(video_id: str) -> tuple[str | None, str | None, list[str]]:
+    """Resolve a direct playable audio URL for video_id via yt-dlp.
+    Returns (stream_url, title, debug_lines); stream_url is None on failure."""
+    code, out, err = await _run_ytdlp(
+        "-f", "bestaudio/best", "--no-playlist",
+        "--print", "%(title)s\t%(url)s",
+        video_id,
+    )
+    if code != 0 or not out.strip():
+        reason = err.strip().splitlines()[-1] if err.strip() else f"exit code {code}"
+        print(f"[Music] {video_id}: {reason}")
+        return None, None, [reason]
+
+    line = out.strip().splitlines()[-1]
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                _SEARCH_URL, json=body, headers=headers,
-                timeout=aiohttp.ClientTimeout(total=10),
-            ) as resp:
-                if resp.status != 200:
-                    print(f"[Music] Search HTTP {resp.status}")
-                    return None
-                data = await resp.json()
-    except Exception as e:
-        print(f"[Music] Search error: {e}")
-        return None
-
-    video_id = _dig_video_id(data)
-    if not video_id:
-        return None
-    title = _dig_title(data, video_id) or query
-    return video_id, title
+        title, url = line.split("\t", 1)
+    except ValueError:
+        return None, None, [f"unparsable yt-dlp output: {line!r}"]
+    print(f"[Music] {video_id}: got '{title}'")
+    return url, title, []
 
 
-def _dig_video_id(node, depth=0):
-    if depth > 20:
-        return None
-    if isinstance(node, dict):
-        vid = node.get("videoId")
-        if isinstance(vid, str) and len(vid) == 11:
-            return vid
-        for v in node.values():
-            r = _dig_video_id(v, depth + 1)
-            if r:
-                return r
-    elif isinstance(node, list):
-        for item in node:
-            r = _dig_video_id(item, depth + 1)
-            if r:
-                return r
-    return None
+async def _search_and_resolve(query: str) -> tuple[str | None, str | None, str | None, list[str]]:
+    """Search for query, then try each candidate until one resolves to a stream.
+    Returns (video_id, stream_url, title, debug_lines)."""
+    candidates = await _candidates(query)
+    if not candidates:
+        return None, None, None, ["no search results"]
 
-
-def _dig_title(node, video_id, depth=0):
-    if depth > 20:
-        return None
-    if isinstance(node, dict):
-        if node.get("videoId") == video_id:
-            t = node.get("title")
-            if isinstance(t, str):
-                return t
-            if isinstance(t, dict):
-                runs = t.get("runs", [])
-                if runs:
-                    return "".join(r.get("text", "") for r in runs)
-        for v in node.values():
-            r = _dig_title(v, video_id, depth + 1)
-            if r:
-                return r
-    elif isinstance(node, list):
-        for item in node:
-            r = _dig_title(item, video_id, depth + 1)
-            if r:
-                return r
-    return None
-
-
-async def _get_stream(video_id: str) -> tuple[str, str, list[str]] | None:
-    """Try each client in order. Returns (stream_url, title, debug_lines) or None."""
     debug = []
-    for client in _PLAYER_CLIENTS:
-        result, reason = await _try_client(video_id, client)
-        if result:
-            debug.append(f"✅ {client['name']}: OK")
-            return result[0], result[1], debug
-        debug.append(f"❌ {client['name']}: {reason}")
-    return None, None, debug
-
-
-async def _try_client(video_id: str, client: dict) -> tuple[tuple | None, str]:
-    """Returns ((url, title), '') on success or (None, reason) on failure."""
-    body: dict = {
-        "context": {"client": client["ctx"]},
-        "videoId": video_id,
-        "contentCheckOk": True,
-        "racyCheckOk": True,
-    }
-    if client.get("embedUrl"):
-        body["context"]["thirdParty"] = {"embedUrl": client["embedUrl"]}
-    if client.get("attestationRequest"):
-        body["attestationRequest"] = client["attestationRequest"]
-
-    headers = {
-        "Content-Type": "application/json",
-        "User-Agent": client["userAgent"],
-        "Origin": "https://www.youtube.com",
-    }
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                _PLAYER_URL, json=body, headers=headers,
-                timeout=aiohttp.ClientTimeout(total=10),
-            ) as resp:
-                if resp.status != 200:
-                    return None, f"HTTP {resp.status}"
-                data = await resp.json()
-    except Exception as e:
-        print(f"[Music] {client['name']} request failed: {e}")
-        return None, f"request error: {e}"
-
-    status = data.get("playabilityStatus", {})
-    if status.get("status") != "OK":
-        reason = status.get("reason") or status.get("status") or "unknown"
-        print(f"[Music] {client['name']}: not playable — {reason}")
-        return None, f"not playable: {reason}"
-
-    title = data.get("videoDetails", {}).get("title", video_id)
-    streaming = data.get("streamingData", {})
-    all_formats = streaming.get("adaptiveFormats", []) + streaming.get("formats", [])
-
-    audio = [
-        f for f in all_formats
-        if f.get("url") and f.get("mimeType", "").startswith("audio/")
-    ]
-    if not audio:
-        total_formats = len(all_formats)
-        has_cipher = any(f.get("signatureCipher") for f in all_formats)
-        print(f"[Music] {client['name']}: no direct audio URLs, total={total_formats}, ciphered={has_cipher}")
-        return None, f"no direct audio URLs (total: {total_formats}, ciphered: {has_cipher})"
-
-    def _score(f):
-        mime = f.get("mimeType", "")
-        return (2 if "opus" in mime else 1) * 1_000_000 + f.get("bitrate", 0)
-
-    best = max(audio, key=_score)
-    print(f"[Music] {client['name']}: got '{title}' — {best.get('mimeType')} {best.get('bitrate', 0)//1000}kbps")
-    return (best["url"], title), ""
+    for video_id, title in candidates:
+        url, resolved_title, reasons = await _get_stream(video_id)
+        if url:
+            debug.append(f"✅ {title}: OK")
+            return video_id, url, resolved_title or title, debug
+        debug.append(f"❌ {title}: {reasons[0] if reasons else 'unknown error'}")
+    return None, None, None, debug
 
 
 # ── Guild state ────────────────────────────────────────────────────────────────
@@ -314,17 +185,11 @@ class Music(commands.Cog):
         elif vc.channel != interaction.user.voice.channel:
             await vc.move_to(interaction.user.voice.channel)
 
-        result = await _search(query)
-        if not result:
-            await interaction.followup.send("*Chii-sama couldn't find that.* Try a different search.")
-            return
-
-        video_id, _ = result
-        stream_url, title, debug_lines = await _get_stream(video_id)
+        video_id, stream_url, title, debug_lines = await _search_and_resolve(query)
         if not stream_url:
-            debug_text = "\n".join(debug_lines) if debug_lines else "no clients tried"
+            debug_text = "\n".join(debug_lines) if debug_lines else "no candidates tried"
             await interaction.followup.send(
-                f"*Chii-sama couldn't get the stream.* `video_id={video_id}`\n```\n{debug_text}\n```"
+                f"*Chii-sama couldn't get the stream.*\n```\n{debug_text}\n```"
             )
             return
         player = _get_player(interaction.guild_id)

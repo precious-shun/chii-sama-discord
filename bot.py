@@ -5,10 +5,18 @@ import json
 import os
 import random
 import re
+import sys
 import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
+
+# Under systemd (no tty), Python fully buffers stdout instead of line-buffering
+# it, so print()-based logs (ours and any library's) can sit unflushed for a
+# long time and never show up in `journalctl` in real time. Force line
+# buffering here since we can't pass -u / PYTHONUNBUFFERED via the unit file.
+sys.stdout.reconfigure(line_buffering=True)
+sys.stderr.reconfigure(line_buffering=True)
 
 import discord
 from discord import app_commands
@@ -22,6 +30,7 @@ load_dotenv()
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 CF_ACCOUNT_ID = os.getenv("CF_ACCOUNT_ID")
 CF_API_TOKEN = os.getenv("CF_API_TOKEN")
+PUTER_AUTH_TOKEN = os.getenv("PUTER_AUTH_TOKEN")
 
 GEMINI_KEYS = [v for k, v in sorted(os.environ.items()) if k.startswith("GEMINI_API_KEY_") and v]
 GEMINI_MODELS = ["gemini-2.5-flash", "gemini-3.5-flash"]
@@ -159,10 +168,41 @@ def calc_modifier(character_data: dict, check_type: str) -> int | None:
     return ability_mod + int(prof_bonus * prof_mult)
 
 
-def generate_image_sync(prompt: str) -> bytes | str:
-    boosted = f"masterpiece, best quality, highly detailed, {prompt}"
+def _generate_image_puter(prompt: str, model: str = "gpt-image-1") -> bytes:
+    """Raises on any failure (bad response, out of free allowance, etc.) so the
+    caller can fall back to Cloudflare."""
+    url = "https://api.puter.com/drivers/call"
+    payload = json.dumps({
+        "interface": "puter-image-generation",
+        "driver": "ai-image",
+        "method": "generate",
+        "args": {"prompt": prompt, "model": model},
+        "auth_token": PUTER_AUTH_TOKEN,
+        "test_mode": False,
+    }).encode()
+    req = urllib.request.Request(
+        url, data=payload,
+        headers={
+            "Authorization": f"Bearer {PUTER_AUTH_TOKEN}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        data = resp.read()
+    result = json.loads(data)
+    if not result.get("success"):
+        raise RuntimeError(f"puter error: {result.get('error') or result}")
+    data_url = result.get("result", "")
+    if not data_url.startswith("data:image"):
+        raise RuntimeError(f"puter returned unexpected result: {data_url[:200]!r}")
+    _, b64data = data_url.split(",", 1)
+    return base64.b64decode(b64data)
+
+
+def _generate_image_cloudflare(prompt: str) -> bytes | str:
     url = f"https://api.cloudflare.com/client/v4/accounts/{CF_ACCOUNT_ID}/ai/run/@cf/black-forest-labs/flux-1-schnell"
-    payload = json.dumps({"prompt": boosted}).encode()
+    payload = json.dumps({"prompt": prompt}).encode()
     req = urllib.request.Request(
         url, data=payload,
         headers={
@@ -181,6 +221,18 @@ def generate_image_sync(prompt: str) -> bytes | str:
         return f"HTTP {e.code}: {e.read().decode()}"
     except Exception as e:
         return str(e)
+
+
+def generate_image_sync(prompt: str) -> bytes | str:
+    boosted = f"masterpiece, best quality, highly detailed, {prompt}"
+
+    if PUTER_AUTH_TOKEN:
+        try:
+            return _generate_image_puter(boosted)
+        except Exception as e:
+            print(f"[Draw] Puter image gen failed, falling back to Cloudflare: {e}")
+
+    return _generate_image_cloudflare(boosted)
 
 
 def get_model() -> genai.GenerativeModel:
